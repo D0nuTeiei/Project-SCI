@@ -94,7 +94,9 @@ export function assignBondOrders(atoms, bonds) {
 }
 
 function chargeOptions(a) {
-  if (a.el.symbol === 'H' || isMetal(a.el) || a.el.valenceElectrons == null) return [0];
+  if (a.el.symbol === 'H' || a.el.valenceElectrons == null) return [0];
+  // โลหะหมู่ 13 (Al, Ga) รับพันธะโคออร์ดิเนตได้ เช่น Al₂Cl₆, AlCl₄⁻
+  if (isMetal(a.el)) return a.el.group === 13 ? [-1, 0] : [0];
   return [-1, 0, 1];
 }
 
@@ -456,14 +458,31 @@ export function dipoleMagnitude(comp) {
   return Math.hypot(x, y, z);
 }
 
+/**
+ * โลหะ + อโลหะ: ใช้กฎของฟายานส์อย่างง่าย — ไอออนบวกประจุสูง/ขนาดเล็กดึงกลุ่มอิเล็กตรอนของไอออนลบ
+ * จนเกิดลักษณะโคเวเลนต์ เช่น BeCl₂, AlCl₃, FeCl₃, TiCl₄, HgCl₂ เป็นโมเลกุลโคเวเลนต์
+ */
+function metalNonmetalIonic(metal, other) {
+  if (metal.el.symbol === 'Be') return false;
+  if (metal.el.group === 1 || metal.el.group === 2) return true;
+  const ox = metal.bondOrderSum; // ใช้แทนเลขออกซิเดชันโดยประมาณ
+  if (other.el.symbol === 'O' || other.el.symbol === 'F') return ox <= 4;
+  if (ox >= 3) return false;
+  const d = Math.abs((metal.el.en ?? 0) - (other.el.en ?? 0));
+  return d >= 1.2;
+}
+
 export function bondTypeOf(bond) {
   const ea = bond.a.el.en; const eb = bond.b.el.en;
-  // โลหะ + อโลหะ → พันธะไอออนิก (ตามหลักสูตร ยกเว้น Be ซึ่งเกิดพันธะโคเวเลนต์)
   const ma = isMetal(bond.a.el); const mb = isMetal(bond.b.el);
-  if (ma !== mb && bond.a.el.symbol !== 'Be' && bond.b.el.symbol !== 'Be') return 'ionic';
+  if (ma && mb) return 'metallic';
+  if (ma !== mb) {
+    const [metal, other] = ma ? [bond.a, bond.b] : [bond.b, bond.a];
+    if (metalNonmetalIonic(metal, other)) return 'ionic';
+  }
   if (ea == null || eb == null) return 'unknown';
   const d = Math.abs(ea - eb);
-  if (d >= 1.7) return 'ionic';
+  if (d >= 1.7 && !ma && !mb) return 'ionic';
   if (d >= 0.4) return 'polar';
   return 'nonpolar';
 }

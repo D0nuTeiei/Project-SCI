@@ -73,9 +73,11 @@ export function describeMolecule(sys, atom) {
   if (info.formal.length) rows.push([t('formalCharges'), info.formal.map((a) => a.el.symbol + chargeSuffix(a.charge)).join(', ')]);
   if (info.radical) rows.unshift([t('status'), t('radicalNote')]);
   if (info.complete && !info.ionic && !info.charge) rows.push([t('polarity'), dipoleMagnitude(comp) > 0.3 ? t('polar') : t('nonpolar')]);
-  if (!info.complete && !info.radical) {
+  if (!info.complete) {
     const q = suggestCharge(comp);
     if (q) rows.unshift([t('hint'), t('hintCharge', q - info.charge)]);
+  }
+  if (!info.complete && !info.radical) {
     const missing = comp.atoms.filter((a) => a.missingBonds() > 0).map((a) => t('missingAt', a.el.symbol, a.missingBonds()));
     const uniq = [...new Set(missing)];
     rows.unshift([t('status'), `${t('incomplete')}: ${uniq.length ? uniq.join(', ') : t('overValence')}`]);

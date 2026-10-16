@@ -252,7 +252,8 @@ function checkChallenge(entries) {
 function onStructureChanged() {
   const now = new Set();
   for (const e of views.analyses) {
-    if (!e.info.entry) continue;
+    // อนุมูลอิสระเกิดบ่อยระหว่างต่อโมเลกุล จึงไม่ฉลอง
+    if (!e.info.entry || e.info.radical) continue;
     const id = e.key + '|' + e.info.entry.id;
     now.add(id);
     if (!recognized.has(id)) {

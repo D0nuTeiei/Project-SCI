@@ -42,13 +42,134 @@ function syncLonePairs(atom) {
     // เริ่มให้อยู่ฝั่งตรงข้ามกับพันธะเพื่อลู่เข้าเร็ว
     const r = randomUnit();
     let ax = 0; let ay = 0; let az = 0;
-    for (const n of atom.neighbors) { ax += n.pos.x - atom.pos.x; ay += n.pos.y - atom.pos.y; az += n.pos.z - atom.pos.z; }
+    for (const n of atom.neighbors) {
+      const dx = n.pos.x - atom.pos.x; const dy = n.pos.y - atom.pos.y; const dz = n.pos.z - atom.pos.z;
+      const l = Math.hypot(dx, dy, dz) || 1;
+      ax += dx / l; ay += dy / l; az += dz / l;
+    }
+    // คู่โดดเดี่ยวที่วางไปแล้วก็นับด้วย จะได้กระจายตัวตั้งแต่ต้น (กันติดค่าต่ำสุดเฉพาะที่)
+    for (const d of atom.lpDirs) { ax += d.x; ay += d.y; az += d.z; }
     const l = Math.hypot(ax, ay, az) || 1;
     const v = { x: r.x * 0.6 - ax / l, y: r.y * 0.6 - ay / l, z: r.z * 0.6 - az / l };
     const vl = Math.hypot(v.x, v.y, v.z) || 1;
     atom.lpDirs.push({ x: v.x / vl, y: v.y / vl, z: v.z / vl });
   }
   atom.lpDirs.length = want;
+}
+
+// ---------- แม่แบบ VSEPR สำหรับกลุ่มอิเล็กตรอน 5–6 กลุ่ม ----------
+const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const angleOf = (a, b) => Math.acos(Math.max(-1, Math.min(1, dot3(a, b))));
+const norm3 = (v) => { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+const cross3 = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+const sub3 = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const add3 = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+const scale3 = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
+const neg3 = (a) => scale3(a, -1);
+/** หมุนเวกเตอร์ v รอบแกน k (หน่วย) เป็นมุม t */
+function rotate3(v, k, t) {
+  const c = Math.cos(t); const s = Math.sin(t);
+  return add3(add3(scale3(v, c), scale3(cross3(k, v), s)), scale3(k, dot3(k, v) * (1 - c)));
+}
+function perpendicular(a) {
+  const t = Math.abs(a.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+  return norm3(cross3(a, t));
+}
+function largestPair(d, idx) {
+  let best = null; let bestA = -1;
+  for (let i = 0; i < idx.length; i++) for (let j = i + 1; j < idx.length; j++) {
+    const a = angleOf(d[idx[i]], d[idx[j]]);
+    if (a > bestA) { bestA = a; best = [idx[i], idx[j]]; }
+  }
+  return best;
+}
+const DEG = Math.PI / 180;
+
+/**
+ * กำหนดมุมเป้าหมายระหว่างพันธะคู่ต่าง ๆ ตามรูปร่าง VSEPR (มุมปรับตามค่าทดลองของสารตัวอย่าง เช่น SF₄, ClF₃, BrF₅)
+ * แล้วดึงอะตอมข้างเคียงเข้าหามุมนั้น — คืนค่า false ถ้าไม่รองรับกรณีนี้
+ */
+function expandedOctet(center, d, lpCount) {
+  const n = d.length;
+  const all = d.map((_, i) => i);
+  const targets = [];
+  let lps = [];
+  const pair = (i, j, deg) => targets.push([i, j, deg * DEG]);
+  if (n === 2 && lpCount === 3) { // เส้นตรง (XeF₂)
+    pair(0, 1, 180);
+    const axis = norm3(sub3(d[0], d[1]));
+    const u = perpendicular(axis);
+    lps = [0, 1, 2].map((k) => rotate3(u, axis, (k * 2 * Math.PI) / 3));
+  } else if (n === 3 && lpCount === 2) { // รูปตัวที (ClF₃)
+    const [i, j] = largestPair(d, all);
+    const k = all.find((x) => x !== i && x !== j);
+    pair(i, j, 175); pair(i, k, 87.5); pair(j, k, 87.5);
+    const axis = norm3(sub3(d[i], d[j]));
+    const e = norm3(sub3(d[k], scale3(axis, dot3(d[k], axis))));
+    lps = [rotate3(e, axis, (2 * Math.PI) / 3), rotate3(e, axis, (-2 * Math.PI) / 3)];
+  } else if (n === 4 && lpCount === 1) { // ไม้กระดก (SF₄)
+    const [i, j] = largestPair(d, all);
+    const [k, l] = all.filter((x) => x !== i && x !== j);
+    pair(i, j, 173); pair(k, l, 102);
+    for (const a of [i, j]) for (const b of [k, l]) pair(a, b, 88);
+    const axis = norm3(sub3(d[i], d[j]));
+    const eq = add3(d[k], d[l]);
+    lps = [norm3(neg3(sub3(eq, scale3(axis, dot3(eq, axis)))))];
+  } else if (n === 4 && lpCount === 2) { // สี่เหลี่ยมแบนราบ (XeF₄)
+    const [i, j] = largestPair(d, all);
+    const [k, l] = all.filter((x) => x !== i && x !== j);
+    pair(i, j, 180); pair(k, l, 180);
+    for (const a of [i, j]) for (const b of [k, l]) pair(a, b, 90);
+    const nrm = norm3(cross3(sub3(d[i], d[j]), sub3(d[k], d[l])));
+    lps = [nrm, neg3(nrm)];
+  } else if (n === 5 && lpCount === 0) { // พีระมิดคู่ฐานสามเหลี่ยม (PCl₅)
+    const [i, j] = largestPair(d, all);
+    const eq = all.filter((x) => x !== i && x !== j);
+    pair(i, j, 180);
+    for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) pair(eq[a], eq[b], 120);
+    for (const a of [i, j]) for (const b of eq) pair(a, b, 90);
+  } else if (n === 5 && lpCount === 1) { // พีระมิดฐานสี่เหลี่ยม (BrF₅)
+    // ยอดพีระมิด = พันธะที่มุมกว้างสุดกับพันธะอื่นแคบที่สุด
+    let apex = 0; let bestMax = Infinity;
+    for (const a of all) {
+      const m = Math.max(...all.filter((b) => b !== a).map((b) => angleOf(d[a], d[b])));
+      if (m < bestMax) { bestMax = m; apex = a; }
+    }
+    const base = all.filter((x) => x !== apex);
+    const [i, j] = largestPair(d, base);
+    const [k, l] = base.filter((x) => x !== i && x !== j);
+    for (const b of base) pair(apex, b, 84.8);
+    pair(i, j, 169.6); pair(k, l, 169.6);
+    for (const a of [i, j]) for (const b of [k, l]) pair(a, b, 89.5);
+    lps = [norm3(neg3(d[apex]))];
+  } else if (n === 6 && lpCount === 0) { // ทรงแปดหน้า (SF₆)
+    const left = [...all];
+    while (left.length) {
+      const [i, j] = largestPair(d, left);
+      pair(i, j, 180);
+      left.splice(left.indexOf(i), 1);
+      left.splice(left.indexOf(j), 1);
+    }
+    for (let a = 0; a < 6; a++) for (let b = a + 1; b < 6; b++) {
+      if (!targets.some(([x, y]) => (x === a && y === b) || (x === b && y === a))) pair(a, b, 90);
+    }
+  } else return false;
+
+  center.lpDirs.length = 0;
+  center.lpDirs.push(...lps);
+  // ปรับระยะระหว่างอะตอมข้างเคียงตามกฎของโคไซน์
+  for (const [i, j, theta] of targets) {
+    const A = d[i].atom; const B = d[j].atom;
+    const want = Math.sqrt(d[i].len ** 2 + d[j].len ** 2 - 2 * d[i].len * d[j].len * Math.cos(theta));
+    const dx = B.pos.x - A.pos.x; const dy = B.pos.y - A.pos.y; const dz = B.pos.z - A.pos.z;
+    const dist = Math.hypot(dx, dy, dz) || 1e-6;
+    const err = ((dist - want) / dist) * 0.3;
+    const wa = A.kinematic ? 0 : B.kinematic ? 1 : 0.5;
+    const wb = B.kinematic ? 0 : A.kinematic ? 1 : 0.5;
+    move(A, dx * err * wa, dy * err * wa, dz * err * wa);
+    move(B, -dx * err * wb, -dy * err * wb, -dz * err * wb);
+  }
+  return true;
 }
 
 /**
@@ -86,6 +207,9 @@ export function relax(sys, iterations = 6) {
         const l = Math.hypot(dx, dy, dz) || 1e-6;
         dirs.push({ x: dx / l, y: dy / l, z: dz / l, len: l, lp: false, atom: nb });
       }
+      // กลุ่มอิเล็กตรอน ≥ 5 (เวเลนซ์ขยาย): แรงผลักแบบจุดบนทรงกลมมีค่าต่ำสุดเฉพาะที่หลายแบบ
+      // จึงใช้แม่แบบ VSEPR โดยตรง (คู่โดดเดี่ยวอยู่ตำแหน่งแนวราบ / ตรงข้ามกัน)
+      if (n >= 2 && n + lps.length >= 5 && expandedOctet(center, dirs, lps.length)) continue;
       for (const lp of lps) dirs.push({ x: lp.x, y: lp.y, z: lp.z, lp: true, ref: lp });
       const forces = dirs.map(() => ({ x: 0, y: 0, z: 0 }));
       for (let i = 0; i < dirs.length; i++) {

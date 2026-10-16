@@ -50,3 +50,19 @@ test('XeF4 สี่เหลี่ยมแบนราบ (มีมุม ~18
   assert.equal(angles.filter((x) => x > 165).length, 2, angles.join(','));
   assert.equal(angles.filter((x) => Math.abs(x - 90) < 10).length, 4, angles.join(','));
 });
+
+test('เวเลนซ์ขยาย 5 กลุ่ม: ClF3 ตัวที, XeF2 เส้นตรง, SF4 ไม้กระดก (คู่โดดเดี่ยวอยู่แนวราบ)', () => {
+  const all = (at) => {
+    const out = [];
+    for (let i = 1; i < at.length; i++) for (let j = i + 1; j < at.length; j++) out.push(angle(at[0], at[i], at[j]));
+    return out.sort((a, b) => a - b);
+  };
+  const clf3 = all(relaxed(['Cl', 'F', 'F', 'F'], [[0, 1], [0, 2], [0, 3]]).atoms);
+  assert.ok(clf3[0] < 95 && clf3[1] < 95 && clf3[2] > 165, clf3.join(','));
+  const xef2 = all(relaxed(['Xe', 'F', 'F'], [[0, 1], [0, 2]]).atoms);
+  assert.ok(xef2[0] > 170, xef2.join(','));
+  const sf4 = all(relaxed(['S', 'F', 'F', 'F', 'F'], [[0, 1], [0, 2], [0, 3], [0, 4]]).atoms);
+  assert.ok(sf4[5] > 165 && sf4[4] > 95 && sf4[4] < 125, sf4.join(','));
+  const pcl5 = all(relaxed(['P', 'Cl', 'Cl', 'Cl', 'Cl', 'Cl'], [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5]]).atoms);
+  assert.equal(pcl5.filter((a) => Math.abs(a - 120) < 8).length, 3, pcl5.join(','));
+});

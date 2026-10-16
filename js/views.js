@@ -130,7 +130,7 @@ export function labelLines(info) {
   if (info.entry) {
     const name = lang === 'th' ? info.entry.th : info.entry.en;
     const lines = [{ text: `${name} · ${info.pretty}`, size: 46, color: '#ffffff' }];
-    if (info.radical) lines.push({ text: t('radicalNote'), size: 28, color: '#ffcf8a' });
+    if (info.radical) lines.push({ text: `${t('incomplete')} · ${t('radicalNote')}`, size: 28, color: '#ffcf8a' });
     return lines;
   }
   if (info.complete) return [{ text: info.pretty, size: 46 }, { text: t('completeUnknown'), size: 28, color: '#9fe8b0' }];

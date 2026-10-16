@@ -49,7 +49,9 @@ test('HO ยังไม่สมบูรณ์', () => {
   assert.equal(info.complete, false);
   assert.equal(info.hill, 'HO');
   assert.equal(info.missing, 1);
-  assert.equal(info.entry, null);
+  // ระบบรู้จักในฐานะอนุมูลอิสระ แต่ยังถือว่าไม่สมบูรณ์ (ป้ายยังขึ้น "แบบจำลองยังไม่สมบูรณ์")
+  assert.equal(info.entry.en, 'Hydroxyl radical');
+  assert.equal(info.radical, true);
 });
 
 test('O2 พันธะคู่, N2 พันธะสาม, CO2, HCN', () => {

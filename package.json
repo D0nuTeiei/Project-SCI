@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "npx http-server -c-1 -p 8080 .",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "audit": "node tools/audit.mjs"
   },
   "license": "MIT"
 }

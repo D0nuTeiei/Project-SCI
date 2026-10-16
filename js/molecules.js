@@ -108,12 +108,16 @@ const carbonylC = (c) => c.atoms.filter((a) => sym(a) === 'C' && a.bonds.some((b
 const aldehyde = (c) => carbonylC(c).some((a) => countNb(a, 'H') >= 1);
 const ketone = (c) => carbonylC(c).some((a) => countNb(a, 'C') === 2);
 const hasOH = (c) => hasBond(c, 'O', 'H');
+// รูปสวิตเตอร์ไอออนของกรดแอมิโน: ⁺NH₃ กับ COO⁻ ในโมเลกุลเดียวกัน
+const zwitterion = (c) => anyAtom(c, 'N', (n) => n.charge === 1) && anyAtom(c, 'O', (o) => o.charge === -1);
 const xWithO = (s, n) => (c) => anyAtom(c, s, (a) => countNb(a, 'O') === n);
 
 // ---------- กลุ่มที่ 1: สารที่เป็นกลาง ----------
 MOLECULES.push(
   // ไฮโดรคาร์บอน
   { f: 'C5H12', th: 'เพนเทน', en: 'Pentane', test: unbranched, dTh: 'แอลเคนโซ่ตรง 5 คาร์บอน เป็นของเหลวระเหยง่าย', dEn: 'A five-carbon straight-chain alkane; a volatile liquid.' },
+  { f: 'CH3CH(CH3)CH2CH3', th: 'ไอโซเพนเทน (2-เมทิลบิวเทน)', en: 'Isopentane', test: (c) => isTree(c) && anyAtom(c, 'C', (a) => countNb(a, 'C') === 3), dTh: 'ไอโซเมอร์โซ่กิ่งของเพนเทน', dEn: 'A branched isomer of pentane.' },
+  { f: 'C(CH3)4', th: 'นีโอเพนเทน (2,2-ไดเมทิลโพรเพน)', en: 'Neopentane', test: (c) => anyAtom(c, 'C', (a) => countNb(a, 'C') === 4), dTh: 'ไอโซเมอร์ที่เป็นทรงกลมที่สุดของเพนเทน จุดเดือดต่ำที่สุดในสามไอโซเมอร์', dEn: 'The most compact pentane isomer, with the lowest boiling point of the three.' },
   { f: 'C6H14', th: 'เฮกเซน', en: 'Hexane', test: unbranched, dTh: 'ตัวทำละลายใช้สกัดน้ำมันพืช', dEn: 'A solvent used to extract vegetable oil.' },
   { f: 'C8H18', th: 'ออกเทน', en: 'Octane', test: unbranched, dTh: 'องค์ประกอบของน้ำมันเบนซิน', dEn: 'A component of petrol.' },
   { f: 'C3H6', th: 'โพรพีน', en: 'Propene', test: (c) => hasDouble(c, 'C', 'C'), dTh: 'แอลคีน ใช้ผลิตพลาสติกพอลิโพรพิลีน', dEn: 'An alkene used to make polypropylene.' },
@@ -140,8 +144,8 @@ MOLECULES.push(
   // สารชีวโมเลกุล
   { f: 'C6H12O6', th: 'กลูโคส', en: 'Glucose', test: aldehyde, dTh: 'น้ำตาลโมเลกุลเดี่ยว แหล่งพลังงานของเซลล์ (โครงสร้างแบบโซ่เปิด มีหมู่แอลดีไฮด์)', dEn: 'A simple sugar and the cell’s energy source (open-chain form, aldehyde group).' },
   { f: 'C6H12O6', id: 'fructose', th: 'ฟรักโทส', en: 'Fructose', test: ketone, dTh: 'น้ำตาลในผลไม้ ไอโซเมอร์ของกลูโคส (มีหมู่คีโตน)', dEn: 'Fruit sugar; an isomer of glucose with a ketone group.' },
-  { f: 'NH2CH2COOH', th: 'ไกลซีน', en: 'Glycine', test: hasOH, dTh: 'กรดแอมิโนที่เล็กที่สุด หน่วยย่อยของโปรตีน', dEn: 'The smallest amino acid, a building block of proteins.' },
-  { f: 'CH3CH(NH2)COOH', th: 'อะลานีน', en: 'Alanine', test: (c) => hasOH(c) && hasBond(c, 'N', 'H'), dTh: 'กรดแอมิโนที่พบมากในโปรตีน', dEn: 'A common amino acid in proteins.' },
+  { f: 'NH2CH2COOH', th: 'ไกลซีน', en: 'Glycine', test: (c) => hasOH(c) || zwitterion(c), dTh: 'กรดแอมิโนที่เล็กที่สุด หน่วยย่อยของโปรตีน ในน้ำและในผลึกอยู่ในรูปสวิตเตอร์ไอออน ⁺H₃N–CH₂–COO⁻', dEn: 'The smallest amino acid. In water and in crystals it exists as the zwitterion ⁺H₃N–CH₂–COO⁻.' },
+  { f: 'CH3CH(NH2)COOH', th: 'อะลานีน', en: 'Alanine', test: (c) => (hasOH(c) || zwitterion(c)) && hasBond(c, 'N', 'H'), dTh: 'กรดแอมิโนที่พบมากในโปรตีน มีคาร์บอนไครัล (โปรตีนใช้แบบ L)', dEn: 'A common amino acid in proteins with a chiral carbon (proteins use the L form).' },
   { f: 'CH3NH2', th: 'เมทิลแอมีน', en: 'Methylamine', dTh: 'แอมีนอย่างง่าย กลิ่นคาวปลา', dEn: 'A simple amine with a fishy smell.' },
   { f: 'C8H10N4O2', th: 'คาเฟอีน', en: 'Caffeine', dTh: 'สารกระตุ้นในกาแฟและชา', dEn: 'The stimulant in coffee and tea.' },
   // อนินทรีย์ที่เป็นกลาง
@@ -197,6 +201,8 @@ MOLECULES.push(
   // อนุมูลอิสระ
   { f: 'NO', th: 'ไนโตรเจนมอนอกไซด์', en: 'Nitric oxide', radical: true, dTh: 'อนุมูลอิสระ: มีอิเล็กตรอนรวมเป็นเลขคี่ จึงมีอิเล็กตรอนเดี่ยว 1 ตัวเสมอ', dEn: 'A radical: an odd number of electrons leaves one unpaired.' },
   { f: 'NO2', th: 'ไนโตรเจนไดออกไซด์', en: 'Nitrogen dioxide', radical: true, dTh: 'อนุมูลอิสระสีน้ำตาลแดง ก่อหมอกควันพิษในเมือง', dEn: 'A red-brown radical that causes city smog.' },
+  { f: 'OH', th: 'อนุมูลไฮดรอกซิล', en: 'Hydroxyl radical', radical: true, dTh: 'อนุมูลอิสระที่ว่องไวมาก ถ้ารับอิเล็กตรอนเพิ่ม 1 ตัวจะเป็นไฮดรอกไซด์ไอออน OH⁻', dEn: 'A very reactive radical; adding one electron gives the hydroxide ion OH⁻.' },
+  { f: 'CH3', th: 'อนุมูลเมทิล', en: 'Methyl radical', radical: true, dTh: 'อนุมูลอิสระรูปสามเหลี่ยมแบนราบ เกิดระหว่างการเผาไหม้มีเทน', dEn: 'A flat radical formed when methane burns.' },
   { f: 'ClO2', th: 'คลอรีนไดออกไซด์', en: 'Chlorine dioxide', radical: true, dTh: 'อนุมูลอิสระที่ใช้ฆ่าเชื้อในน้ำดื่ม', dEn: 'A radical used to disinfect drinking water.' },
   // ไอออนอะตอมเดี่ยว
   { f: 'H', q: 1, th: 'ไฮโดรเจนไอออน (โปรตอน)', en: 'Hydrogen ion (proton)', dTh: 'ตัวกำหนดความเป็นกรด (pH)', dEn: 'Determines acidity (pH).' },
