@@ -122,6 +122,9 @@ MOLECULES.push(
   { f: 'C8H18', th: 'ออกเทน', en: 'Octane', test: unbranched, dTh: 'องค์ประกอบของน้ำมันเบนซิน', dEn: 'A component of petrol.' },
   { f: 'C3H6', th: 'โพรพีน', en: 'Propene', test: (c) => hasDouble(c, 'C', 'C'), dTh: 'แอลคีน ใช้ผลิตพลาสติกพอลิโพรพิลีน', dEn: 'An alkene used to make polypropylene.' },
   { f: 'C3H6', id: 'cyclopropane', th: 'ไซโคลโพรเพน', en: 'Cyclopropane', test: (c) => !isTree(c), dTh: 'ไอโซเมอร์แบบวงของโพรพีน มุมพันธะแคบ (60°) จึงไม่เสถียร', dEn: 'A ring isomer of propene with strained 60° angles.' },
+  { f: 'ClCH=CHCl', th: '1,2-ไดคลอโรเอทีน', en: '1,2-Dichloroethene', test: (c) => anyAtom(c, 'C', (a) => countNb(a, 'Cl') === 1) && !anyAtom(c, 'C', (a) => countNb(a, 'Cl') === 2), dTh: 'มีไอโซเมอร์ cis (มีขั้ว, จุดเดือด 60 °C) และ trans (ไม่มีขั้ว, จุดเดือด 48 °C) เพราะหมุนรอบพันธะคู่ไม่ได้', dEn: 'Has cis (polar, bp 60 °C) and trans (nonpolar, bp 48 °C) isomers because the C=C bond cannot rotate.' },
+  { f: 'CH3CH=CHCH3', th: '2-บิวทีน', en: '2-Butene', test: (c) => c.bonds.some((b) => b.order === 2 && sym(b.a) === 'C' && sym(b.b) === 'C' && countNb(b.a, 'C') === 2 && countNb(b.b, 'C') === 2), dTh: 'มีไอโซเมอร์ cis และ trans', dEn: 'Has cis and trans isomers.' },
+  { f: 'CH2=CHCH2CH3', th: '1-บิวทีน', en: '1-Butene', test: (c) => unbranched(c) && c.bonds.some((b) => b.order === 2 && (countNb(b.a, 'H') === 2 || countNb(b.b, 'H') === 2)), dTh: 'พันธะคู่อยู่ปลายโซ่ จึงไม่มีไอโซเมอร์ cis/trans', dEn: 'The double bond is at the chain end, so there is no cis/trans isomer.' },
   { f: 'C6H12', th: 'ไซโคลเฮกเซน', en: 'Cyclohexane', test: (c) => !isTree(c) && !hasDouble(c, 'C', 'C'), dTh: 'ไซโคลแอลเคนวงหกเหลี่ยม (ไม่แบนราบ)', dEn: 'A six-membered cycloalkane (not flat).' },
   { f: 'C6H5CH3', th: 'โทลูอีน', en: 'Toluene', dTh: 'ตัวทำละลายในทินเนอร์และสี', dEn: 'A solvent in paint thinner.' },
   { f: 'C10H8', th: 'แนฟทาลีน', en: 'Naphthalene', dTh: 'วงเบนซีนสองวงเชื่อมกัน ใช้ทำลูกเหม็น', dEn: 'Two fused benzene rings; used in mothballs.' },
@@ -145,7 +148,7 @@ MOLECULES.push(
   { f: 'C6H12O6', th: 'กลูโคส', en: 'Glucose', test: aldehyde, dTh: 'น้ำตาลโมเลกุลเดี่ยว แหล่งพลังงานของเซลล์ (โครงสร้างแบบโซ่เปิด มีหมู่แอลดีไฮด์)', dEn: 'A simple sugar and the cell’s energy source (open-chain form, aldehyde group).' },
   { f: 'C6H12O6', id: 'fructose', th: 'ฟรักโทส', en: 'Fructose', test: ketone, dTh: 'น้ำตาลในผลไม้ ไอโซเมอร์ของกลูโคส (มีหมู่คีโตน)', dEn: 'Fruit sugar; an isomer of glucose with a ketone group.' },
   { f: 'NH2CH2COOH', th: 'ไกลซีน', en: 'Glycine', test: (c) => hasOH(c) || zwitterion(c), dTh: 'กรดแอมิโนที่เล็กที่สุด หน่วยย่อยของโปรตีน ในน้ำและในผลึกอยู่ในรูปสวิตเตอร์ไอออน ⁺H₃N–CH₂–COO⁻', dEn: 'The smallest amino acid. In water and in crystals it exists as the zwitterion ⁺H₃N–CH₂–COO⁻.' },
-  { f: 'CH3CH(NH2)COOH', th: 'อะลานีน', en: 'Alanine', test: (c) => (hasOH(c) || zwitterion(c)) && hasBond(c, 'N', 'H'), dTh: 'กรดแอมิโนที่พบมากในโปรตีน มีคาร์บอนไครัล (โปรตีนใช้แบบ L)', dEn: 'A common amino acid in proteins with a chiral carbon (proteins use the L form).' },
+  { f: 'CH3CH(NH2)COOH', aminoAcid: true, th: 'อะลานีน', en: 'Alanine', test: (c) => (hasOH(c) || zwitterion(c)) && hasBond(c, 'N', 'H'), dTh: 'กรดแอมิโนที่พบมากในโปรตีน มีคาร์บอนไครัล (โปรตีนใช้แบบ L)', dEn: 'A common amino acid in proteins with a chiral carbon (proteins use the L form).' },
   { f: 'CH3NH2', th: 'เมทิลแอมีน', en: 'Methylamine', dTh: 'แอมีนอย่างง่าย กลิ่นคาวปลา', dEn: 'A simple amine with a fishy smell.' },
   { f: 'C8H10N4O2', th: 'คาเฟอีน', en: 'Caffeine', dTh: 'สารกระตุ้นในกาแฟและชา', dEn: 'The stimulant in coffee and tea.' },
   // อนินทรีย์ที่เป็นกลาง
@@ -176,6 +179,8 @@ MOLECULES.push(
   { f: 'Li2O', th: 'ลิเทียมออกไซด์', en: 'Lithium oxide', dTh: 'ใช้ในเซรามิกและแก้ว', dEn: 'Used in ceramics and glass.' },
   { f: 'Na2S', th: 'โซเดียมซัลไฟด์', en: 'Sodium sulfide', dTh: 'ใช้ในอุตสาหกรรมฟอกหนัง', dEn: 'Used in leather tanning.' },
   { f: 'CaF2', th: 'แคลเซียมฟลูออไรด์', en: 'Calcium fluoride', dTh: 'แร่ฟลูออไรต์', dEn: 'The mineral fluorite.' },
+  { f: 'SrF2', th: 'สตรอนเชียมฟลูออไรด์', en: 'Strontium fluoride', dTh: 'ผลึกไอออนิกแบบฟลูออไรต์ ใช้ทำเลนส์บางชนิด', dEn: 'A fluorite-type ionic crystal used in some optics.' },
+  { f: 'BaF2', th: 'แบเรียมฟลูออไรด์', en: 'Barium fluoride', dTh: 'ผลึกไอออนิกแบบฟลูออไรต์ ใช้เป็นตัวตรวจวัดรังสี', dEn: 'A fluorite-type ionic crystal used in radiation detectors.' },
   { f: 'BaCl2', th: 'แบเรียมคลอไรด์', en: 'Barium chloride', dTh: 'ใช้ทดสอบไอออนซัลเฟต (ได้ตะกอนขาว)', dEn: 'Used to test for sulfate ions (white precipitate).' },
   { f: 'BaO', th: 'แบเรียมออกไซด์', en: 'Barium oxide', dTh: 'ออกไซด์ของโลหะแอลคาไลน์เอิร์ท', dEn: 'An alkaline-earth metal oxide.' },
   { f: 'AlCl3', th: 'อะลูมิเนียมคลอไรด์', en: 'Aluminium chloride', dTh: 'ใช้ในยาระงับเหงื่อ', dEn: 'Used in antiperspirants.' },
@@ -327,6 +332,27 @@ const BOILING = {
   NaCl: 1465, KCl: 1420, MgO: 3600, CaO: 2850, LiF: 1676, NaF: 1704,
 };
 
+// เรขาคณิตจากการทดลอง (โมเลกุลเดี่ยวในสถานะแก๊ส) — มุมพันธะที่อะตอมกลาง (องศา) และมุมบิด
+// แหล่ง: NIST CCCBDB / ตารางโครงสร้างโมเลกุลในตำรา; CaF₂, SrF₂, BaF₂ จากสเปกโทรสโกปีอินฟราเรด (ดู docs/research-gap-analysis.md)
+const EXPERIMENTAL = {
+  H2O: { angle: 104.5 },
+  NH3: { angle: 106.7 },
+  CH4: { angle: 109.5 },
+  NF3: { angle: 102.2 },
+  OF2: { angle: 103.1 },
+  SO2: { angle: 119.3 },
+  O3: { angle: 116.8 },
+  H2S: { angle: 92.1, noteTh: 'มุมแคบกว่าน้ำมาก (92° vs 104.5°) — ธาตุคาบ 3 ขึ้นไปใช้ออร์บิทัล p เกือบล้วนในการสร้างพันธะ (ออร์บิทัล s และ p ผสมกันน้อย) VSEPR อย่างง่ายบอกได้แค่ว่า "น้อยกว่า 109.5°"', noteEn: 'Much narrower than water (92° vs 104.5°): heavier atoms bond with almost pure p orbitals (little s–p mixing); simple VSEPR only predicts "less than 109.5°".' },
+  PH3: { angle: 93.3, noteTh: 'มุมเกือบ 90° ต่างจาก NH₃ (106.7°) ด้วยเหตุผลเดียวกับ H₂S', noteEn: 'Close to 90°, unlike NH₃ (106.7°), for the same reason as H₂S.' },
+  NO2: { angle: 134.1, noteTh: 'มุมกว้างกว่า 120° เพราะอะตอมกลางมีอิเล็กตรอนเดี่ยวเพียง 1 ตัว ซึ่งผลักน้อยกว่าคู่โดดเดี่ยว', noteEn: 'Wider than 120°: the single unpaired electron repels less than a lone pair.' },
+  ClO2: { angle: 117.4 },
+  CaF2: { angle: 140, shapeTh: 'มุมงอ', shapeEn: 'Bent', noteTh: 'ในสถานะแก๊ส CaF₂ เป็นโมเลกุลงอ (~140°) ทั้งที่ VSEPR ทำนายเส้นตรง — เกิดจากไอออน Ca²⁺ ถูกโพลาไรซ์ (ออร์บิทัล d ร่วมด้วย) ส่วนในของแข็งเป็นผลึกไอออนิก', noteEn: 'Gaseous CaF₂ is bent (~140°) although VSEPR predicts linear, due to core polarisation of Ca²⁺ (d-orbital participation). The solid is an ionic crystal.' },
+  SrF2: { angle: 108, shapeTh: 'มุมงอ', shapeEn: 'Bent', noteTh: 'แก๊ส SrF₂ งอ ~108° (VSEPR ทำนายเส้นตรง)', noteEn: 'Gaseous SrF₂ is bent (~108°); VSEPR predicts linear.' },
+  BaF2: { angle: 100, shapeTh: 'มุมงอ', shapeEn: 'Bent', noteTh: 'แก๊ส BaF₂ งอมาก ~100° (VSEPR ทำนายเส้นตรง)', noteEn: 'Gaseous BaF₂ is strongly bent (~100°); VSEPR predicts linear.' },
+  H2O2: { dihedral: 111.5, noteTh: 'ไม่แบนราบ: พันธะ O–H สองพันธะบิดทำมุมกัน ~111° เพราะคู่โดดเดี่ยวบน O ทั้งสองผลักกัน', noteEn: 'Not planar: the two O–H bonds twist ~111° apart because lone pairs on the two O atoms repel.' },
+  N2H4: { dihedral: 91 },
+};
+
 const keyOf = (hill, q) => (q ? `${hill}[${q}]` : hill);
 const INDEX = new Map();
 for (const m of MOLECULES) {
@@ -334,6 +360,7 @@ for (const m of MOLECULES) {
   m.key = keyOf(hillFormula(parseFormula(m.f)), m.q);
   m.id = m.id || (m.q ? `${m.f}${m.q > 0 ? '+' : ''}${m.q}` : m.f);
   if (BOILING[m.id] !== undefined) m.bp = BOILING[m.id];
+  if (EXPERIMENTAL[m.id]) m.exp = EXPERIMENTAL[m.id];
   if (!INDEX.has(m.key)) INDEX.set(m.key, []);
   INDEX.get(m.key).push(m);
 }

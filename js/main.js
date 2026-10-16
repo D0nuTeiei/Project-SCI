@@ -4,7 +4,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ChemSystem } from './chemistry.js';
 import { relax, atomRadius, attractHydrogenBonds } from './physics.js';
-import { latticeFor } from './lattice.js';
+import { structureOptions } from './lattice.js';
+import { flipDoubleBond, mirrorPositions } from './stereo.js';
 import { MoleculeViews } from './views.js';
 import { PeriodicPanel, PANEL_WIDTH, PANEL_HEIGHT } from './periodicPanel.js';
 import { Interaction, Pointer } from './interaction.js';
@@ -236,7 +237,9 @@ function updateInfo(force = false) {
   else if (selection?.kind === 'atom' && !selection.atom.removed) {
     const comp = new Set(sys.componentOf(selection.atom).atoms);
     const hbondCount = views.hbonds.filter((hb) => comp.has(hb.h) || comp.has(hb.acceptor)).length;
-    d = describeMolecule(sys, selection.atom, { hbondCount, cluster: clusterOf(selection.atom) });
+    d = describeMolecule(sys, selection.atom, {
+      hbondCount, cluster: clusterOf(selection.atom), stereo: views.stereoOf(selection.atom), useExperimental: views.useExperimental,
+    });
   }
   $('info-body').innerHTML = renderInfoHTML(d);
   if (infoCard.mesh.visible) infoCard.draw(d, challenge.active ? challenge.text(t) : '');
@@ -270,32 +273,57 @@ function clusterOf(atom) {
   return null;
 }
 
-/** เปิด/ปิดโครงผลึกของสารไอออนิกที่เลือก */
-function toggleLattice() {
+/** ตัวเลือกโครงสร้างผลึกของสิ่งที่เลือกอยู่ (ไอออนิก / ร่างตาข่าย / โลหะ) */
+function currentStructureOptions() {
+  if (selection?.kind === 'element') return { options: structureOptions({ el: selection.el }), formula: selection.el.symbol };
   const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
-  let groups = null;
-  let title = '';
-  if (atom) {
-    const cl = clusterOf(atom);
-    if (cl) { groups = cl.ionGroups; title = cl.pretty; } else {
-      const info = analyze(sys.componentOf(atom));
-      if (info.ionic && info.complete) { groups = info.ionGroups; title = info.pretty; }
-    }
-  }
-  const lat = latticeFor(groups);
-  if (!lat) {
+  if (!atom) return { options: [], formula: '' };
+  const cl = clusterOf(atom);
+  if (cl) return { options: structureOptions({ ionGroups: cl.ionGroups }), formula: cl.pretty };
+  const info = analyze(sys.componentOf(atom));
+  const el = info.single && !info.charge ? atom.el : null;
+  return { options: structureOptions({ info, el }), formula: info.pretty };
+}
+
+/** เปิด/ปิดโครงสร้างผลึก (id = ตัวเลือกที่ต้องการ หรือว่าง = ตัวแรก) */
+function toggleLattice(id = null) {
+  const { options, formula } = currentStructureOptions();
+  const opt = id ? options.find((o) => o.id === id) : options[0];
+  if (!opt) {
     if (views.lattice) views.hideLattice(); else toast(t('noLattice'));
     return;
   }
-  if (views.lattice?.key === title) { views.hideLattice(); return; }
-  views.showLattice({ ...lat, title }, new THREE.Vector3(-0.26, 0.07, 0.06));
+  const st = opt.build();
+  st.formula = formula;
+  if (views.lattice?.key === st.key) { views.hideLattice(); return; }
+  views.showLattice(st, new THREE.Vector3(-0.2, 0.07, 0.08));
   infoDirty = true;
+}
+
+/** สลับ cis ↔ trans ของพันธะคู่ในโมเลกุลที่เลือก */
+function flipSelection() {
+  const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
+  const st = atom && views.stereoOf(atom);
+  if (!st?.dbs.length) return;
+  flipDoubleBond(sys, st.dbs[0]);
+  setTimeout(() => {
+    const now = views.stereoOf(atom)?.dbs[0];
+    if (now) toast(t('flipped', now.cisTrans || now.ez));
+  }, 700);
+}
+
+/** สร้างภาพในกระจกของโมเลกุลที่เลือก วางไว้ข้าง ๆ */
+function mirrorSelection() {
+  const made = duplicateSelection();
+  if (!made) return;
+  mirrorPositions(made);
+  toast(t('mirrorDone'));
 }
 
 /** ทำสำเนาโมเลกุลที่เลือก วางข้าง ๆ (ใช้ดูพันธะไฮโดรเจนระหว่างโมเลกุล) */
 function duplicateSelection() {
   const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
-  if (!atom) { toast(t('selectAtomFirst')); return; }
+  if (!atom) { toast(t('selectAtomFirst')); return null; }
   const comp = sys.componentOf(atom);
   const box = new THREE.Box3();
   comp.atoms.forEach((a) => box.expandByPoint(a.pos));
@@ -307,6 +335,7 @@ function duplicateSelection() {
     for (let k = 0; k < Math.abs(a.userCharge); k++) sys.addCharge(map.get(a), Math.sign(a.userCharge));
   }
   sfx.spawn();
+  return [...map.values()];
 }
 
 function checkChallenge(entries) {
@@ -362,8 +391,16 @@ $('info-body').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   sfx.click();
-  if (btn.dataset.action === 'lattice') toggleLattice();
-  else if (btn.dataset.action === 'duplicate') duplicateSelection();
+  const act = btn.dataset.action;
+  if (act.startsWith('struct:')) toggleLattice(act.slice(7));
+  else if (act === 'duplicate') duplicateSelection();
+  else if (act === 'flip') flipSelection();
+  else if (act === 'mirror') mirrorSelection();
+  else if (act === 'expToggle') {
+    views.setExperimental(!views.useExperimental);
+    toast(t(views.useExperimental ? 'usingExp' : 'usingVsepr'));
+  }
+  infoDirty = true;
 });
 $('btn-minus').onclick = () => app.onButton('chargeMinus');
 $('btn-lang').onclick = () => app.onButton('lang');

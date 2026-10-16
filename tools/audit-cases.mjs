@@ -71,7 +71,7 @@ export const CASES = [
   { group: 'structure', th: 'ไดโบเรน B₂H₆ (พันธะ 3 ศูนย์กลาง)', smiles: '[BH2]1[H][BH2][H]1', expect: { buildable: true }, ref: 'CCCBDB', note: 'H สะพานต่อกับ B สองอะตอม (พันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน)' },
 
   // ---------- ไอโซเมอร์เชิงพื้นที่ ----------
-  { group: 'stereo', th: 'cis/trans-1,2-ไดคลอโรเอทีน', smiles: 'ClC=CCl', center: 1, expect: { stereo: 'cis-trans', polar: 'cis polar (1.9 D) / trans nonpolar (0 D)' }, ref: 'CCCBDB', note: 'สูตรและการต่อเหมือนกันแต่ต่างกันที่การจัดตัวรอบพันธะคู่ ทำให้สภาพขั้วต่างกัน' },
+  { group: 'stereo', th: 'cis/trans-1,2-ไดคลอโรเอทีน', smiles: 'ClC=CCl', center: 1, expect: { stereo: 'cis-trans' }, ref: 'CCCBDB', note: 'สูตรและการต่อเหมือนกันแต่ต่างกันที่การจัดตัวรอบพันธะคู่ ทำให้สภาพขั้วต่างกัน' },
   { group: 'stereo', th: 'อะลานีน (ไครัล L/D)', smiles: 'CC(N)C(=O)O', expect: { name: 'Alanine', stereo: 'chiral' }, ref: 'STEREO-RSC', note: 'มีอะตอมคาร์บอนไครัล ภาพสะท้อนในกระจกซ้อนทับกันไม่ได้ (โปรตีนใช้แบบ L)' },
   { group: 'stereo', th: 'นีโอเพนเทน (ไอโซเมอร์โครงสร้างของเพนเทน)', smiles: 'CC(C)(C)C', expect: { name: 'Neopentane' }, ref: 'CCCBDB' },
   { group: 'stereo', th: 'ไอโซเพนเทน', smiles: 'CC(C)CC', expect: { name: 'Isopentane' }, ref: 'CCCBDB' },

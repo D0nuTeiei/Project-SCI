@@ -11,18 +11,16 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 import { BY_SYMBOL } from '../js/elements.js';
-import { ChemSystem, analyze, shapeOf, dipoleMagnitude, findHydrogenBonds } from '../js/chemistry.js';
+import { ChemSystem, analyze, shapeOf, dipoleMagnitude, findHydrogenBonds, applyExperimentalGeometry, bondTypeOf } from '../js/chemistry.js';
+import { findStereocenters, doubleBondStereo, flipDoubleBond, mirrorPositions } from '../js/stereo.js';
+import { structureOptions } from '../js/lattice.js';
 import { bondEnergy } from '../js/energy.js';
 import { latticeFor } from '../js/lattice.js';
 import { relax } from '../js/physics.js';
 import { buildSmiles } from './smiles.mjs';
 import { CASES } from './audit-cases.mjs';
 
-const FEATURE = {
-  network: 'แสดงโครงผลึกร่างตาข่าย',
-  metallic: 'แสดงพันธะโลหะ',
-  stereo: 'แยกไอโซเมอร์เชิงพื้นที่ (cis/trans, ไครัล)',
-};
+const FEATURE = {};
 
 /** วางโมเลกุลน้ำโมเลกุลที่สองให้ O อยู่ต่อจากแนว O–H ของโมเลกุลแรก แล้วตรวจหาพันธะไฮโดรเจน */
 function waterDimerHBonds() {
@@ -48,15 +46,19 @@ function angle(c, a, b) {
   const cos = d / (Math.hypot(...u) * Math.hypot(...v));
   return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
+/** มุมบิด X–A–B–Y: มุมระหว่างภาพฉายของ A→X และ B→Y บนระนาบตั้งฉากกับแกน A–B (0° = ด้านเดียวกัน) */
 function dihedral(p0, p1, p2, p3) {
   const sub = (a, b) => [a.x - b.x, a.y - b.y, a.z - b.z];
-  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const b0 = sub(p0, p1); const b1 = sub(p2, p1); const b2 = sub(p3, p2);
-  const n1 = cross(b0, b1); const n2 = cross(b1, b2);
-  const c = dot(n1, n2) / (Math.hypot(...n1) * Math.hypot(...n2));
+  const axis = sub(p2, p1);
+  const al = Math.hypot(...axis);
+  const u = axis.map((v) => v / al);
+  const proj = (v) => { const k = dot(v, u); return v.map((x, i) => x - u[i] * k); };
+  const v = proj(sub(p0, p1)); const w = proj(sub(p3, p2));
+  const c = dot(v, w) / (Math.hypot(...v) * Math.hypot(...w));
   return (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
 }
+
 /** ระยะไกลสุดของอะตอมจากระนาบที่เข้ากับทุกอะตอมดีที่สุด (least squares, เมตร) */
 function planarity(atoms) {
   const n = atoms.length;
@@ -95,6 +97,9 @@ function planarity(atoms) {
 function runCase(cs, seed) {
   const sys = new ChemSystem();
   const { heavy, all, failed } = buildSmiles(sys, BY_SYMBOL, cs.smiles);
+  // ใช้เรขาคณิตจากการทดลองแบบเดียวกับแอป (ถ้าโมเลกุลมีข้อมูล)
+  const comp0 = sys.componentOf(heavy[0]);
+  applyExperimentalGeometry([{ comp: comp0, info: analyze(comp0) }]);
   for (let f = 0; f < 900; f++) relax(sys);
   const center = cs.center !== undefined ? heavy[cs.center] : heavy.reduce((m, a) => (a.bonds.length > m.bonds.length ? a : m), heavy[0]);
   const comp = sys.componentOf(heavy[0]);
@@ -119,6 +124,7 @@ function runCase(cs, seed) {
   return {
     failed, info, center, angles, orders, dih,
     shape: shapeOf(center)?.en || null,
+    sys, heavy,
     dipole: dipoleMagnitude(comp),
     flat: cs.expect.planar ? planarity(comp.atoms) : null,
     formal: comp.atoms.filter((a) => a.charge).map((a) => a.el.symbol + (a.charge > 0 ? '+' : '−').repeat(Math.abs(a.charge))),
@@ -140,7 +146,8 @@ for (const cs of CASES) {
   if (e.radicalName) add('ชื่ออนุมูลอิสระ', r.info.entry?.en === e.radicalName, r.info.entry?.en || '(ไม่มีชื่อ)', e.radicalName);
   const wantComplete = e.complete ?? true;
   add('ครบเวเลนซ์', r.info.complete === wantComplete, r.info.complete ? 'ครบ' : 'ไม่ครบ', wantComplete ? 'ครบ' : 'ไม่ครบ (อนุมูลอิสระ)');
-  if (e.shape) add('รูปร่าง', r.shape === e.shape, r.shape || '–', e.shape);
+  const shownShape = r.info.expShape?.en || r.shape;
+  if (e.shape) add('รูปร่าง', shownShape === e.shape, shownShape || '–', e.shape);
   if (e.angles) {
     for (const want of e.angles) {
       const got = median(runs.map((x) => x.angles.reduce((best, a) => (Math.abs(a - want) < Math.abs(best - want) ? a : best), Infinity)));
@@ -150,12 +157,44 @@ for (const cs of CASES) {
   if (typeof e.polar === 'boolean') {
     const d = median(runs.map((x) => x.dipole));
     add('สภาพขั้ว', (d > 0.3) === e.polar, d > 0.3 ? 'มีขั้ว' : 'ไม่มีขั้ว', e.polar ? 'มีขั้ว' : 'ไม่มีขั้ว');
-  } else if (typeof e.polar === 'string') add('สภาพขั้ว', false, 'คำนวณจากโครงเดียว', e.polar);
+  }
   if (e.equalBonds) add('พันธะยาวเท่ากัน (เรโซแนนซ์)', new Set(r.orders).size <= 1, `อันดับพันธะ ${r.orders.join('/')}`, 'เท่ากันทุกพันธะ');
   if (e.planar) add('แบนราบ', median(runs.map((x) => x.flat)) < 0.004, `เบี่ยง ${(median(runs.map((x) => x.flat)) * 1000).toFixed(1)} มม.`, 'อยู่ในระนาบเดียว');
   if (e.dihedral) add(`มุมบิด ~${e.dihedral}°`, Math.abs(median(runs.map((x) => x.dih)) - e.dihedral) <= 15, `${median(runs.map((x) => x.dih)).toFixed(0)}°`, `${e.dihedral}°`);
   if (typeof e.ionic === 'boolean') add('ชนิดพันธะ', r.info.ionic === e.ionic, r.info.ionic ? 'ไอออนิก' : 'โคเวเลนต์', e.ionic ? 'ไอออนิก' : 'โคเวเลนต์');
   for (const k of Object.keys(FEATURE)) if (e[k]) add(FEATURE[k], false, 'ยังไม่มี', 'ควรมี');
+  if (e.stereo === 'cis-trans') {
+    const comp = r.sys.componentOf(r.heavy[0]);
+    const s1 = doubleBondStereo(comp)[0];
+    const p1 = dipoleMagnitude(comp) > 0.3;
+    flipDoubleBond(r.sys, s1);
+    for (let f = 0; f < 900; f++) relax(r.sys);
+    const s2 = doubleBondStereo(comp)[0];
+    const p2 = dipoleMagnitude(comp) > 0.3;
+    const cisPolar = s1.cisTrans === 'cis' ? p1 : p2;
+    const transPolar = s1.cisTrans === 'trans' ? p1 : p2;
+    add('แยก cis/trans และสลับได้', s1.cisTrans && s2.cisTrans && s1.cisTrans !== s2.cisTrans, `${s1.cisTrans} → ${s2.cisTrans}`, 'cis ↔ trans');
+    add('cis มีขั้ว / trans ไม่มีขั้ว', cisPolar && !transPolar, `cis ${cisPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}, trans ${transPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}`, 'cis มีขั้ว, trans ไม่มีขั้ว');
+  }
+  if (e.stereo === 'chiral') {
+    const comp = r.sys.componentOf(r.heavy[0]);
+    const c1 = findStereocenters(comp);
+    const l1 = c1.map((c) => c.label).join(',');
+    mirrorPositions(comp.atoms);
+    const l2 = findStereocenters(comp).map((c) => c.label).join(',');
+    add('หาคาร์บอนไครัล + ภาพในกระจกกลับ R/S', c1.length === 1 && l1 !== l2, `${c1.length} ตำแหน่ง ${l1} → กระจก ${l2}`, '1 ตำแหน่ง, R ↔ S');
+  }
+  if (e.network) {
+    const opt = structureOptions({ info: r.info }).find((o) => o.id === 'sio2');
+    const st = opt?.build();
+    const ok = st && st.neighbors.length === 4 && st.neighbors.every((i) => st.sites[i].sym === 'O');
+    add('แสดงโครงผลึกร่างตาข่าย', !!ok, ok ? 'Si ต่อกับ O 4 อะตอม' : 'ไม่มี', 'Si ต่อ O 4 อะตอม');
+  }
+  if (e.metallic) {
+    const metal = r.info.metalOnly && r.sys.bonds.every((b) => bondTypeOf(b) === 'metallic');
+    const st = structureOptions({ info: r.info }).find((o) => o.id === 'metal')?.build();
+    add('แสดงพันธะโลหะ / ผลึกโลหะ', metal && st?.electronSea && st.neighbors.length === 8, st ? `ผลึก bcc เพื่อนบ้าน ${st.neighbors.length}, ทะเลอิเล็กตรอน` : 'ไม่มี', 'bcc 8 + ทะเลอิเล็กตรอน');
+  }
   if (e.lattice) {
     const lat = latticeFor(r.info.ionGroups);
     add('แสดงโครงผลึกไอออนิก', !!lat, lat ? `${lat.th} (เลขโคออร์ดิเนชัน ${lat.cn})` : 'ไม่มีแบบจำลอง', 'โครงผลึก');

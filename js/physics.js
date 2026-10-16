@@ -229,6 +229,8 @@ export function relax(sys, iterations = 6) {
       // กลุ่มอิเล็กตรอน ≥ 5 (เวเลนซ์ขยาย): แรงผลักแบบจุดบนทรงกลมมีค่าต่ำสุดเฉพาะที่หลายแบบ
       // จึงใช้แม่แบบ VSEPR โดยตรง (คู่โดดเดี่ยวอยู่ตำแหน่งแนวราบ / ตรงข้ามกัน)
       if (n >= 2 && n + lps.length >= 5 && expandedOctet(center, dirs, lps.length)) continue;
+      // มุมจากการทดลอง (เช่น H₂S 92.1°): ตรึงมุมระหว่างพันธะ ให้แรงผลักขยับเฉพาะคู่โดดเดี่ยว
+      const fixed = center.targetAngle != null && n >= 2;
       for (const lp of lps) dirs.push({ x: lp.x, y: lp.y, z: lp.z, lp: true, ref: lp });
       const forces = dirs.map(() => ({ x: 0, y: 0, z: 0 }));
       for (let i = 0; i < dirs.length; i++) {
@@ -258,10 +260,56 @@ export function relax(sys, iterations = 6) {
           v.x += tx * step * 2; v.y += ty * step * 2; v.z += tz * step * 2;
           const l = Math.hypot(v.x, v.y, v.z) || 1;
           v.x /= l; v.y /= l; v.z /= l;
-        } else if (!d.atom.kinematic && n >= 2) {
+        } else if (!d.atom.kinematic && n >= 2 && !fixed) {
           move(d.atom, tx * step * d.len, ty * step * d.len, tz * step * d.len);
         }
       }
+      if (fixed) {
+        const theta = (center.targetAngle * Math.PI) / 180;
+        const bonds = dirs.filter((d) => !d.lp);
+        for (let i = 0; i < bonds.length; i++) {
+          for (let j = i + 1; j < bonds.length; j++) {
+            const A = bonds[i].atom; const B = bonds[j].atom;
+            const want = Math.sqrt(bonds[i].len ** 2 + bonds[j].len ** 2 - 2 * bonds[i].len * bonds[j].len * Math.cos(theta));
+            const dx = B.pos.x - A.pos.x; const dy = B.pos.y - A.pos.y; const dz = B.pos.z - A.pos.z;
+            const dist = Math.hypot(dx, dy, dz) || 1e-6;
+            const err = ((dist - want) / dist) * 0.3;
+            const wa = A.kinematic ? 0 : B.kinematic ? 1 : 0.5;
+            const wb = B.kinematic ? 0 : A.kinematic ? 1 : 0.5;
+            move(A, dx * err * wa, dy * err * wa, dz * err * wa);
+            move(B, -dx * err * wb, -dy * err * wb, -dz * err * wb);
+          }
+        }
+      }
+    }
+
+    // มุมบิดจากการทดลอง (เช่น H–O–O–H ของ H₂O₂ ~111.5°)
+    for (const b of sys.bonds) {
+      if (b.targetDihedral == null) continue;
+      const A = b.a; const B = b.b;
+      const X = A.neighbors.find((x) => x !== B); const Y = B.neighbors.find((y) => y !== A);
+      if (!X || !Y || Y.kinematic) continue;
+      let ax = B.pos.x - A.pos.x; let ay = B.pos.y - A.pos.y; let az = B.pos.z - A.pos.z;
+      const al = Math.hypot(ax, ay, az) || 1e-6;
+      ax /= al; ay /= al; az /= al;
+      const proj = (p, o) => {
+        const vx = p.pos.x - o.pos.x; const vy = p.pos.y - o.pos.y; const vz = p.pos.z - o.pos.z;
+        const k = vx * ax + vy * ay + vz * az;
+        return { x: vx - ax * k, y: vy - ay * k, z: vz - az * k };
+      };
+      const v = proj(X, A); const w = proj(Y, B);
+      const cx = ay * v.z - az * v.y; const cy = az * v.x - ax * v.z; const cz = ax * v.y - ay * v.x;
+      const phi = Math.atan2(cx * w.x + cy * w.y + cz * w.z, v.x * w.x + v.y * w.y + v.z * w.z);
+      const target = ((phi >= 0 ? 1 : -1) * b.targetDihedral * Math.PI) / 180;
+      const t = (target - phi) * 0.2;
+      // หมุน Y รอบแกน A→B ที่ผ่าน B (สูตรของโรดริเกส)
+      const c = Math.cos(t); const sn = Math.sin(t);
+      const px = Y.pos.x - B.pos.x; const py = Y.pos.y - B.pos.y; const pz = Y.pos.z - B.pos.z;
+      const dotp = ax * px + ay * py + az * pz;
+      const rx = px * c + (ay * pz - az * py) * sn + ax * dotp * (1 - c);
+      const ry = py * c + (az * px - ax * pz) * sn + ay * dotp * (1 - c);
+      const rz = pz * c + (ax * py - ay * px) * sn + az * dotp * (1 - c);
+      Y.pos.x = B.pos.x + rx; Y.pos.y = B.pos.y + ry; Y.pos.z = B.pos.z + rz;
     }
 
     // 3) พันธะคู่/เรโซแนนซ์หมุนไม่ได้: อะตอมที่ต่อกับสองปลายของพันธะต้องอยู่ในระนาบเดียวกัน

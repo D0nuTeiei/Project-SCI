@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CATEGORIES, elementName } from './elements.js';
 import { analyze, dipoleMagnitude, shapeOf, suggestCharge, intermolecularForces, bondTypeOf } from './chemistry.js';
 import { moleculeBondEnergy } from './energy.js';
-import { latticeFor } from './lattice.js';
+import { structureOptions, metalPacking } from './lattice.js';
 import { chargeSuffix } from './molecules.js';
 import { FONT, roundRect } from './textures.js';
 import { t, getLang } from './i18n.js';
@@ -24,7 +24,12 @@ export function describeElement(el) {
   const cap = Math.max(...el.valences);
   if (!el.synthetic) rows.push([t('bondCap'), cap === 0 ? t('stable') : `${el.valences.join(' / ')} ${t('bonds')}`]);
   if (el.en != null) rows.push([t('electroneg'), el.en]);
+  // สารบริสุทธิ์ของธาตุนี้ยึดกันแบบไหน
+  if (CATS_METAL.has(el.category)) rows.push([t('pureForm'), t('pureMetal', metalPacking(el.symbol))]);
+  else if (el.symbol === 'C') rows.push([t('pureForm'), t('pureCarbon')]);
+  else if (el.symbol === 'Si' || el.symbol === 'Ge') rows.push([t('pureForm'), t('pureNetwork')]);
   return {
+    actions: structureActions({ el }),
     symbol: el.symbol,
     badgeTop: el.z,
     color: cat.color,
@@ -35,12 +40,14 @@ export function describeElement(el) {
   };
 }
 
+const CATS_METAL = new Set(['alkali', 'alkaline', 'transition', 'post-transition', 'lanthanide', 'actinide']);
 const FRACTIONS = [[1, '1'], [1.25, '1¼'], [4 / 3, '1⅓'], [1.5, '1½'], [5 / 3, '1⅔'], [1.75, '1¾'], [2, '2']];
 const fmtOrder = (o) => (FRACTIONS.find(([v]) => Math.abs(v - o) < 1e-3)?.[1] ?? o.toFixed(2));
 
-/** ปุ่มดูโครงผลึก (ถ้ามีแบบจำลอง) */
-function latticeAction(ionGroups) {
-  return latticeFor(ionGroups) ? [{ id: 'lattice', label: t('showLattice') }] : [];
+/** ปุ่มดูโครงสร้างผลึกที่เกี่ยวข้อง (ไอออนิก / ร่างตาข่าย / โลหะ) */
+function structureActions(opts) {
+  const lang = getLang();
+  return structureOptions(opts).map((o) => ({ id: `struct:${o.id}`, label: `🔷 ${lang === 'th' ? o.th : o.en}` }));
 }
 
 /**
@@ -68,12 +75,14 @@ export function describeMolecule(sys, atom, ctx = {}) {
       const q = suggestCharge(comp);
       if (q) d.rows.unshift([t('hintRow'), `${t('hintCharge', q - info.charge)} → ${atom.el.symbol}${chargeSuffix(q)}`]);
     }
-    d.actions = [];
+    d.actions = d.actions || [];
+    if (info.charge) d.actions = [];
     if (ctx.cluster) clusterRows(d, ctx.cluster, lang);
     return d;
   }
   // สารไอออนิก: ใช้ "มวลสูตร" และไม่นับ "พันธะ" แบบโมเลกุล (กันความเข้าใจผิดว่าเป็นโมเลกุล)
   const ionicOnly = info.ionic && comp.bonds.every((b) => bondTypeOf(b) === 'ionic');
+  const e = info.entry;
   const rows = [
     [ionicOnly ? t('formulaMass') : t('molarMass'), `${info.mass.toFixed(2)} g/mol`],
     [t('atoms'), comp.atoms.length],
@@ -86,6 +95,22 @@ export function describeMolecule(sys, atom, ctx = {}) {
   if (info.central) {
     const shape = shapeOf(info.central);
     if (shape) rows.push([t('shape'), `${lang === 'th' ? shape.th : shape.en} (${shape.angle}) · ${t('around')} ${info.central.el.symbol}`]);
+  }
+  // เรขาคณิตจากการทดลอง เทียบกับที่ VSEPR ทำนาย
+  const exp = info.entry?.exp;
+  if (exp?.shapeEn) rows.push([t('expShapeRow'), lang === 'th' ? exp.shapeTh : exp.shapeEn]);
+  if (exp?.angle) rows.push([t('expAngleRow'), `${exp.angle}°`]);
+  if (exp?.dihedral) rows.push([t('expDihedralRow'), `${exp.dihedral}°`]);
+  if (exp?.noteTh) rows.push(['', lang === 'th' ? exp.noteTh : exp.noteEn]);
+  // ไอโซเมอร์เชิงพื้นที่
+  const stereo = ctx.stereo;
+  for (const db of stereo?.dbs || []) {
+    rows.push([t('geoIsomer'), `${db.cisTrans ? `${db.cisTrans} (${db.ez})` : db.ez} — ${t('geoIsomerNote')}`]);
+  }
+  if (stereo?.centers.length) {
+    const list = stereo.centers.map((c) => `${c.atom.el.symbol}(${c.label})`).join(', ');
+    const ld = e?.aminoAcid && stereo.centers.length === 1 ? ` = ${stereo.centers[0].label === 'S' ? 'L' : 'D'}-${lang === 'th' ? e.th : e.en}` : '';
+    rows.push([t('chiralRow'), `${list}${ld} — ${t('chiralNote')}`]);
   }
   rows.push([t('bondType'), ionicOnly ? t('ionic') : info.ionic ? `${t('ionic')} + ${t('covalent')}` : t('covalent')]);
   if (info.charge) rows.unshift([t('netCharge'), chargeText(info.charge)]);
@@ -128,7 +153,6 @@ export function describeMolecule(sys, atom, ctx = {}) {
     const uniq = [...new Set(missing)];
     rows.unshift([t('status'), `${t('incomplete')}: ${uniq.length ? uniq.join(', ') : t('overValence')}`]);
   }
-  const e = info.entry;
   return {
     symbol: info.pretty.length <= 4 ? info.pretty : '⚛',
     badgeTop: '',
@@ -138,7 +162,10 @@ export function describeMolecule(sys, atom, ctx = {}) {
     rows,
     desc: e ? (lang === 'th' ? e.dTh : e.dEn) : '',
     actions: [
-      ...(info.ionic && info.complete ? latticeAction(info.ionGroups) : []),
+      ...structureActions({ info }),
+      ...(exp?.angle || exp?.dihedral ? [{ id: 'expToggle', label: ctx.useExperimental === false ? t('useExp') : t('useVsepr') }] : []),
+      ...(stereo?.dbs.some((d) => d.cisTrans || d.ez) ? [{ id: 'flip', label: t('flipCisTrans') }] : []),
+      ...(stereo?.centers.length ? [{ id: 'mirror', label: t('mirror') }] : []),
       { id: 'duplicate', label: t('duplicate') },
     ],
   };
@@ -149,7 +176,7 @@ function clusterRows(d, cluster, lang) {
   const name = cluster.entry ? `${lang === 'th' ? cluster.entry.th : cluster.entry.en} · ${cluster.pretty}` : cluster.pretty;
   d.rows.unshift([t('ions'), `${cluster.ions} → ${name}`]);
   d.rows.push([t('ionicNoteRow'), t('ionicNote')]);
-  d.actions.push(...latticeAction(cluster.ionGroups));
+  d.actions.push(...structureActions({ ionGroups: cluster.ionGroups }));
 }
 
 function fracCharge(q) {

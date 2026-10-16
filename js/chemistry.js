@@ -353,6 +353,8 @@ export function analyze(comp) {
     pretty: prettyFormula(formula) + chargeSuffix(charge),
     central,
     shape: central ? shapeOf(central) : null,
+    // รูปร่างจากการทดลองที่ต่างจาก VSEPR (เช่น CaF₂ แก๊สงอ)
+    expShape: entry?.exp?.shapeEn ? { th: entry.exp.shapeTh, en: entry.exp.shapeEn } : null,
     ionic,
     ions: ionic ? ionBreakdown(comp) : null,
     ionGroups: ionic ? ionList(comp) : null,
@@ -360,6 +362,9 @@ export function analyze(comp) {
     formal: comp.atoms.filter((a) => a.charge !== 0 && !single),
     radical: !!entry?.radical,
     single,
+    // สารที่เป็นโลหะล้วน (เช่น Na–Na) → ของจริงยึดกันด้วยพันธะโลหะในผลึก
+    metalOnly: comp.atoms.every((a) => isMetal(a.el)),
+    metalEl: comp.atoms[0].el,
   };
 }
 
@@ -573,6 +578,24 @@ export function ionClusters(entries, maxGap = 0.12) {
     });
   }
   return out;
+}
+
+/**
+ * ใช้เรขาคณิตจากการทดลองกับโมเลกุลที่รู้จัก (เช่น H₂S 92.1°, NO₂ 134°, มุมบิดของ H₂O₂)
+ * entries: [{ comp, info }] — enabled=false ใช้ VSEPR อย่างเดียว
+ */
+export function applyExperimentalGeometry(entries, enabled = true) {
+  for (const { comp, info } of entries) {
+    comp.atoms.forEach((a) => { a.targetAngle = null; });
+    comp.bonds.forEach((b) => { b.targetDihedral = null; });
+    const exp = enabled ? info.entry?.exp : null;
+    if (!exp) continue;
+    if (exp.angle && info.central) info.central.targetAngle = exp.angle;
+    if (exp.dihedral) {
+      const core = comp.bonds.find((b) => b.a.el.symbol !== 'H' && b.b.el.symbol !== 'H');
+      if (core) core.targetDihedral = exp.dihedral;
+    }
+  }
 }
 
 /**
