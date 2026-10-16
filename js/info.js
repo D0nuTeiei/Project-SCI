@@ -1,7 +1,8 @@
 // สร้างข้อมูลสำหรับการ์ดข้อมูล (HTML และการ์ด 3D ใน XR)
 import * as THREE from 'three';
 import { CATEGORIES, elementName } from './elements.js';
-import { analyze, dipoleMagnitude, shapeOf } from './chemistry.js';
+import { analyze, dipoleMagnitude, shapeOf, suggestCharge } from './chemistry.js';
+import { chargeSuffix } from './molecules.js';
 import { FONT, roundRect } from './textures.js';
 import { t, getLang } from './i18n.js';
 
@@ -38,7 +39,22 @@ export function describeMolecule(sys, atom) {
   const info = analyze(comp);
   if (info.single) {
     const d = describeElement(atom.el);
-    if (Math.max(...atom.el.valences) > 0 && !atom.isSatisfied()) d.rows.unshift([t('status'), t('needMore', atom.missingBonds())]);
+    if (info.charge) {
+      d.symbol = info.pretty;
+      if (info.entry) {
+        d.title = lang === 'th' ? info.entry.th : info.entry.en;
+        d.subtitle = `${info.pretty} · ${lang === 'th' ? info.entry.en : info.entry.th}`;
+        d.desc = lang === 'th' ? info.entry.dTh : info.entry.dEn;
+      }
+      d.rows.unshift([t('netCharge'), chargeText(info.charge)]);
+      if (!info.complete) d.rows.unshift([t('status'), t('impossibleIon')]);
+    } else if (Math.max(...atom.el.valences) > 0 && !atom.isSatisfied()) {
+      d.rows.unshift([t('status'), t('needMore', atom.missingBonds())]);
+    }
+    if (!info.complete) {
+      const q = suggestCharge(comp);
+      if (q) d.rows.unshift([t('hint'), `${t('hintCharge', q - info.charge)} → ${atom.el.symbol}${chargeSuffix(q)}`]);
+    }
     return d;
   }
   const rows = [
@@ -52,11 +68,17 @@ export function describeMolecule(sys, atom) {
     if (shape) rows.push([t('shape'), `${lang === 'th' ? shape.th : shape.en} (${shape.angle}) · ${t('around')} ${info.central.el.symbol}`]);
   }
   rows.push([t('bondType'), info.ionic ? t('ionic') : t('covalent')]);
-  if (info.complete && !info.ionic) rows.push([t('polarity'), dipoleMagnitude(comp) > 0.3 ? t('polar') : t('nonpolar')]);
-  if (!info.complete) {
+  if (info.charge) rows.unshift([t('netCharge'), chargeText(info.charge)]);
+  if (info.ions) rows.push([t('ions'), info.ions]);
+  if (info.formal.length) rows.push([t('formalCharges'), info.formal.map((a) => a.el.symbol + chargeSuffix(a.charge)).join(', ')]);
+  if (info.radical) rows.unshift([t('status'), t('radicalNote')]);
+  if (info.complete && !info.ionic && !info.charge) rows.push([t('polarity'), dipoleMagnitude(comp) > 0.3 ? t('polar') : t('nonpolar')]);
+  if (!info.complete && !info.radical) {
+    const q = suggestCharge(comp);
+    if (q) rows.unshift([t('hint'), t('hintCharge', q - info.charge)]);
     const missing = comp.atoms.filter((a) => a.missingBonds() > 0).map((a) => t('missingAt', a.el.symbol, a.missingBonds()));
     const uniq = [...new Set(missing)];
-    rows.unshift([t('status'), `${t('incomplete')}: ${uniq.join(', ')}`]);
+    rows.unshift([t('status'), `${t('incomplete')}: ${uniq.length ? uniq.join(', ') : t('overValence')}`]);
   }
   const e = info.entry;
   return {
@@ -68,6 +90,10 @@ export function describeMolecule(sys, atom) {
     rows,
     desc: e ? (lang === 'th' ? e.dTh : e.dEn) : '',
   };
+}
+
+function chargeText(q) {
+  return `${q > 0 ? '+' : '−'}${Math.abs(q)}`;
 }
 
 export function renderInfoHTML(d) {

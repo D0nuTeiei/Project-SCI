@@ -27,6 +27,8 @@ const BUTTONS = [
   { id: 'challenge', x: 350, w: 300, label: () => '🎯 ' + t('challenge'), toggle: 'challenge' },
   { id: 'lonepairs', x: 666, w: 330, label: () => '•• ' + t('lonePairs'), toggle: 'lonePairs' },
   { id: 'lang', x: 1012, w: 200, label: () => (getLang() === 'th' ? 'TH → EN' : 'EN → TH') },
+  { id: 'chargePlus', x: 1228, w: 190, label: () => '⊕ ' + t('chargePlus') },
+  { id: 'chargeMinus', x: 1434, w: 190, label: () => '⊖ ' + t('chargeMinus') },
 ];
 const BTN_Y = FOOT_Y;
 const BTN_H = 84;

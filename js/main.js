@@ -12,7 +12,8 @@ import { Challenge } from './challenge.js';
 import { TextSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { t, getLang, setLang, onLangChange } from './i18n.js';
-import { prettyFormula } from './molecules.js';
+import { prettyFormula, chargeSuffix } from './molecules.js';
+import { analyze } from './chemistry.js';
 import { BY_SYMBOL } from './elements.js';
 
 const $ = (id) => document.getElementById(id);
@@ -130,6 +131,8 @@ const app = {
     else if (id === 'challenge') toggleChallenge();
     else if (id === 'lonepairs') toggleLonePairs();
     else if (id === 'lang') setLang(getLang() === 'th' ? 'en' : 'th');
+    else if (id === 'chargePlus') changeCharge(1);
+    else if (id === 'chargeMinus') changeCharge(-1);
   },
   onBond(a) {
     sfx.bond();
@@ -139,7 +142,11 @@ const app = {
   onDetach() { sfx.break(); },
   onRecycle() { sfx.recycle(); toast(t('recycled')); selection = null; },
   onSelectAtom(atom) { selection = { kind: 'atom', atom }; panel.selected = null; },
-  onSelectElement(el) { selection = { kind: 'element', el }; panel.selected = el; },
+  onSelectElement(el, atom = null) {
+    // อะตอมที่เพิ่งสร้างถูกเลือกทันที จะได้กดปุ่มประจุต่อได้เลย
+    selection = atom ? { kind: 'atom', atom } : { kind: 'element', el };
+    panel.selected = el;
+  },
   onLongPress() {
     navigator.vibrate?.(25);
     toast(t('detachHint'));
@@ -194,6 +201,8 @@ function applyLang() {
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
   $('help-body').innerHTML = t('helpBody') + (EMBED ? `<p class="note">${t('embedNote')}</p>` : '');
   $('btn-lang').textContent = getLang() === 'th' ? 'EN' : 'TH';
+  $('btn-plus').title = t('chargePlusTitle');
+  $('btn-minus').title = t('chargeMinusTitle');
   recyclerLabel.setLines([{ text: t('recycler'), size: 30 }, { text: t('recyclerHint'), size: 24, color: '#9fe8b0' }]);
   if (camStream) $('btn-camera').querySelector('span').textContent = t('cameraOff');
   updateChallengeUI();
@@ -213,6 +222,33 @@ function updateInfo(force = false) {
   if (infoCard.mesh.visible) infoCard.draw(d, challenge.active ? challenge.text(t) : '');
 }
 
+/** เติม/ดึงอิเล็กตรอนของอะตอมที่เลือก */
+function changeCharge(delta) {
+  const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
+  if (!atom) { toast(t('selectAtomFirst')); return; }
+  if (!sys.addCharge(atom, delta)) { toast(t('chargeLimit')); return; }
+  const pretty = analyze(sys.componentOf(atom)).pretty;
+  // ถ้าได้ไอออนที่รู้จัก ป้ายแจ้งชื่อจะขึ้นแทน
+  if (!(views.sync() && onStructureChanged())) toast(t(delta > 0 ? 'lostElectron' : 'gainedElectron', pretty));
+  infoDirty = true;
+}
+
+function celebrate(center, entry, pretty) {
+  views.burst(center);
+  const name = getLang() === 'th' ? entry.th : entry.en;
+  toast(`✨ ${name} · ${pretty}`);
+}
+
+function checkChallenge(entries) {
+  const done = challenge.check(entries);
+  if (!done) return false;
+  sfx.success();
+  toast(`${t('challengeDone')}${prettyFormula(done.f)}${chargeSuffix(done.q)} ✓  (+10)`);
+  updateChallengeUI();
+  return true;
+}
+
+/** คืนค่า true ถ้ามีการแจ้งโมเลกุลใหม่ */
 function onStructureChanged() {
   const now = new Set();
   for (const e of views.analyses) {
@@ -223,26 +259,34 @@ function onStructureChanged() {
       const c = new THREE.Vector3();
       e.comp.atoms.forEach((a) => c.add(a.pos));
       c.divideScalar(e.comp.atoms.length);
-      views.burst(c);
-      const name = getLang() === 'th' ? e.info.entry.th : e.info.entry.en;
-      toast(`✨ ${name} · ${prettyFormula(e.info.entry.f)}`);
+      celebrate(c, e.info.entry, e.info.pretty);
     }
   }
   const fresh = [...now].some((id) => !recognized.has(id));
   recognized = now;
-  const done = challenge.check(views.analyses.map((e) => e.info.entry));
-  if (done) {
-    sfx.success();
-    toast(`${t('challengeDone')}${prettyFormula(done.f)} ✓  (+10)`);
-    updateChallengeUI();
-  } else if (fresh) sfx.success();
+  if (!checkChallenge(views.analyses.map((e) => e.info.entry)) && fresh) sfx.success();
   infoDirty = true;
+  return fresh;
+}
+
+/** ไอออนที่วางใกล้กันจนเกิดเป็นเกลือ */
+function onNewClusters() {
+  for (const c of views.takeNewClusters()) {
+    const center = new THREE.Vector3();
+    let n = 0;
+    c.members.forEach((m) => m.comp.atoms.forEach((a) => { center.add(a.pos); n++; }));
+    celebrate(center.divideScalar(n), c.entry, c.pretty);
+    toast(t('saltFormed', `${getLang() === 'th' ? c.entry.th : c.entry.en} · ${c.pretty}`));
+    if (!checkChallenge([c.entry])) sfx.success();
+  }
 }
 
 // ปุ่ม HTML
 $('btn-clear').onclick = () => app.onButton('clear');
 $('btn-challenge').onclick = () => app.onButton('challenge');
 $('btn-lp').onclick = () => app.onButton('lonepairs');
+$('btn-plus').onclick = () => app.onButton('chargePlus');
+$('btn-minus').onclick = () => app.onButton('chargeMinus');
 $('btn-lang').onclick = () => app.onButton('lang');
 $('btn-skip').onclick = () => { challenge.skip(); updateChallengeUI(); };
 $('btn-help').onclick = () => $('help-dialog').showModal();
@@ -612,6 +656,7 @@ function animate() {
   world.getWorldQuaternion(_wq).invert();
   ringQuat.copy(_wq).multiply(cam.getWorldQuaternion(new THREE.Quaternion()));
   views.update(dt, { rings: interaction.rings, preview: interaction.preview, showLonePairs, cameraLocal: camLocal, ringQuat });
+  onNewClusters();
 
   // เส้นเลเซอร์ของคอนโทรลเลอร์/มือ
   for (const p of xrPointers) {

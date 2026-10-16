@@ -103,7 +103,7 @@ export class Interaction {
       const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(app.panelGroup.quaternion);
       const point = app.world.worldToLocal(hit.hit.point.clone()).addScaledVector(normal, 0.045);
       const atom = app.spawnAtom(info.el, point);
-      app.onSelectElement(info.el);
+      app.onSelectElement(info.el, atom);
       const g = this.startAtomGrab(p, L, atom, false, false);
       g.spawned = true;
       return true;

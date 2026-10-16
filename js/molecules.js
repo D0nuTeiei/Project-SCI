@@ -34,7 +34,7 @@ const MOLECULES = [
 
   // ออกไซด์ของอโลหะ
   { f: 'CO2', th: 'คาร์บอนไดออกไซด์', en: 'Carbon dioxide', dTh: 'โมเลกุลเส้นตรง O=C=O ไม่มีขั้ว เป็นแก๊สเรือนกระจก', dEn: 'Linear O=C=O, nonpolar; a greenhouse gas.' },
-  { f: 'CO', th: 'คาร์บอนมอนอกไซด์', en: 'Carbon monoxide', allowIncomplete: true, dTh: 'แก๊สพิษไม่มีสีไม่มีกลิ่น ของจริงมีพันธะสาม (มีพันธะโคออร์ดิเนต) ซึ่งแบบจำลองนี้แสดงไม่ได้', dEn: 'Toxic, colourless gas. Really a triple bond (with a dative bond) that this simple model cannot show.' },
+  { f: 'CO', th: 'คาร์บอนมอนอกไซด์', en: 'Carbon monoxide', dTh: 'แก๊สพิษไม่มีสีไม่มีกลิ่น มีพันธะสาม C≡O (หนึ่งพันธะเป็นพันธะโคออร์ดิเนต) จึงมีประจุฟอร์มอล C⁻ และ O⁺', dEn: 'A toxic, colourless gas. The C≡O triple bond includes a dative bond, giving formal charges C⁻ and O⁺.' },
   { f: 'SO2', th: 'ซัลเฟอร์ไดออกไซด์', en: 'Sulfur dioxide', dTh: 'รูปร่างมุมงอ เป็นสาเหตุของฝนกรด', dEn: 'Bent; a cause of acid rain.' },
   { f: 'SO3', th: 'ซัลเฟอร์ไตรออกไซด์', en: 'Sulfur trioxide', dTh: 'สามเหลี่ยมแบนราบ ใช้ผลิตกรดซัลฟิวริก', dEn: 'Trigonal planar; used to make sulfuric acid.' },
   { f: 'SiO2', th: 'ซิลิคอนไดออกไซด์', en: 'Silicon dioxide', dTh: 'องค์ประกอบของทรายและแก้ว (ของจริงเป็นโครงผลึกร่างตาข่าย)', dEn: 'Sand and glass (really a giant covalent network).' },
@@ -65,7 +65,7 @@ const MOLECULES = [
   { f: 'C2H2', th: 'เอไทน์ (อะเซทิลีน)', en: 'Ethyne (acetylene)', dTh: 'มีพันธะสาม C≡C เส้นตรง ใช้ในงานเชื่อมโลหะ', dEn: 'A linear C≡C triple bond; used in welding torches.' },
   { f: 'C3H8', th: 'โพรเพน', en: 'Propane', dTh: 'แก๊สหุงต้ม (LPG)', dEn: 'Cooking gas (LPG).' },
   { f: 'C4H10', th: 'บิวเทน', en: 'Butane', test: (c) => !anyAtom(c, 'C', (a) => countNb(a, 'C') >= 3), dTh: 'แก๊สในไฟแช็ก', dEn: 'The gas in lighters.' },
-  { f: 'C4H10', th: 'ไอโซบิวเทน', en: 'Isobutane', test: (c) => anyAtom(c, 'C', (a) => countNb(a, 'C') >= 3), dTh: 'ไอโซเมอร์โซ่กิ่งของบิวเทน ใช้เป็นสารทำความเย็น', dEn: 'Branched isomer of butane; used as a refrigerant.' },
+  { f: 'C4H10', id: 'isobutane', th: 'ไอโซบิวเทน', en: 'Isobutane', test: (c) => anyAtom(c, 'C', (a) => countNb(a, 'C') >= 3), dTh: 'ไอโซเมอร์โซ่กิ่งของบิวเทน ใช้เป็นสารทำความเย็น', dEn: 'Branched isomer of butane; used as a refrigerant.' },
   { f: 'C6H6', th: 'เบนซีน', en: 'Benzene', test: (c) => c.atoms.filter((a) => sym(a) === 'C').every((a) => countNb(a, 'C') === 2 && countNb(a, 'H') === 1), dTh: 'วงหกเหลี่ยมแบนราบ พันธะเดี่ยวสลับพันธะคู่ (เรโซแนนซ์)', dEn: 'A flat six-membered ring with alternating bonds (resonance).' },
   { f: 'CH3OH', th: 'เมทานอล', en: 'Methanol', dTh: 'แอลกอฮอล์ที่เป็นพิษ ทำให้ตาบอดได้', dEn: 'A toxic alcohol that can cause blindness.' },
   { f: 'C2H5OH', th: 'เอทานอล', en: 'Ethanol', test: (c) => hasBond(c, 'O', 'H'), dTh: 'แอลกอฮอล์ในเครื่องดื่มและเจลล้างมือ', dEn: 'The alcohol in drinks and hand sanitiser.' },
@@ -99,6 +99,183 @@ const MOLECULES = [
   { f: 'AgCl', th: 'ซิลเวอร์คลอไรด์', en: 'Silver chloride', dTh: 'ตะกอนสีขาว ไวต่อแสง', dEn: 'A white, light-sensitive precipitate.' },
 ];
 
+// ---------- ตัวช่วยเพิ่มเติม ----------
+const isTree = (c) => c.bonds.length === c.atoms.length - 1;
+const unbranched = (c) => isTree(c) && !anyAtom(c, 'C', (a) => countNb(a, 'C') >= 3);
+const hasDouble = (c, s1, s2) => c.bonds.some((b) => b.order === 2
+  && ((sym(b.a) === s1 && sym(b.b) === s2) || (sym(b.a) === s2 && sym(b.b) === s1)));
+const carbonylC = (c) => c.atoms.filter((a) => sym(a) === 'C' && a.bonds.some((b) => b.order === 2 && sym(b.a === a ? b.b : b.a) === 'O'));
+const aldehyde = (c) => carbonylC(c).some((a) => countNb(a, 'H') >= 1);
+const ketone = (c) => carbonylC(c).some((a) => countNb(a, 'C') === 2);
+const hasOH = (c) => hasBond(c, 'O', 'H');
+const xWithO = (s, n) => (c) => anyAtom(c, s, (a) => countNb(a, 'O') === n);
+
+// ---------- กลุ่มที่ 1: สารที่เป็นกลาง ----------
+MOLECULES.push(
+  // ไฮโดรคาร์บอน
+  { f: 'C5H12', th: 'เพนเทน', en: 'Pentane', test: unbranched, dTh: 'แอลเคนโซ่ตรง 5 คาร์บอน เป็นของเหลวระเหยง่าย', dEn: 'A five-carbon straight-chain alkane; a volatile liquid.' },
+  { f: 'C6H14', th: 'เฮกเซน', en: 'Hexane', test: unbranched, dTh: 'ตัวทำละลายใช้สกัดน้ำมันพืช', dEn: 'A solvent used to extract vegetable oil.' },
+  { f: 'C8H18', th: 'ออกเทน', en: 'Octane', test: unbranched, dTh: 'องค์ประกอบของน้ำมันเบนซิน', dEn: 'A component of petrol.' },
+  { f: 'C3H6', th: 'โพรพีน', en: 'Propene', test: (c) => hasDouble(c, 'C', 'C'), dTh: 'แอลคีน ใช้ผลิตพลาสติกพอลิโพรพิลีน', dEn: 'An alkene used to make polypropylene.' },
+  { f: 'C3H6', id: 'cyclopropane', th: 'ไซโคลโพรเพน', en: 'Cyclopropane', test: (c) => !isTree(c), dTh: 'ไอโซเมอร์แบบวงของโพรพีน มุมพันธะแคบ (60°) จึงไม่เสถียร', dEn: 'A ring isomer of propene with strained 60° angles.' },
+  { f: 'C6H12', th: 'ไซโคลเฮกเซน', en: 'Cyclohexane', test: (c) => !isTree(c) && !hasDouble(c, 'C', 'C'), dTh: 'ไซโคลแอลเคนวงหกเหลี่ยม (ไม่แบนราบ)', dEn: 'A six-membered cycloalkane (not flat).' },
+  { f: 'C6H5CH3', th: 'โทลูอีน', en: 'Toluene', dTh: 'ตัวทำละลายในทินเนอร์และสี', dEn: 'A solvent in paint thinner.' },
+  { f: 'C10H8', th: 'แนฟทาลีน', en: 'Naphthalene', dTh: 'วงเบนซีนสองวงเชื่อมกัน ใช้ทำลูกเหม็น', dEn: 'Two fused benzene rings; used in mothballs.' },
+  // แอลกอฮอล์ อีเทอร์ คาร์บอนิล
+  { f: 'C3H7OH', th: 'โพรพานอล', en: '1-Propanol', test: (c) => anyAtom(c, 'O', (o) => o.neighbors.some((n) => sym(n) === 'C' && countNb(n, 'C') === 1)) && hasOH(c), dTh: 'แอลกอฮอล์ 3 คาร์บอน (หมู่ OH ที่ปลายโซ่)', dEn: 'A three-carbon alcohol with OH at the chain end.' },
+  { f: '(CH3)2CHOH', th: 'ไอโซโพรพิลแอลกอฮอล์', en: 'Isopropyl alcohol', test: (c) => anyAtom(c, 'O', (o) => o.neighbors.some((n) => sym(n) === 'C' && countNb(n, 'C') === 2)) && hasOH(c), dTh: 'แอลกอฮอล์เช็ดแผล ไอโซเมอร์ของโพรพานอล', dEn: 'Rubbing alcohol; an isomer of 1-propanol.' },
+  { f: 'HOCH2CH2OH', th: 'เอทิลีนไกลคอล', en: 'Ethylene glycol', dTh: 'สารกันน้ำแข็งในหม้อน้ำรถยนต์', dEn: 'Antifreeze in car radiators.' },
+  { f: 'C3H5(OH)3', th: 'กลีเซอรอล', en: 'Glycerol', test: (c) => c.atoms.filter((a) => sym(a) === 'O').every((o) => countNb(o, 'H') === 1), dTh: 'มีหมู่ OH สามหมู่ ใช้ในเครื่องสำอางและสบู่', dEn: 'Three OH groups; used in cosmetics and soap.' },
+  { f: 'CH3CHO', th: 'เอทานาล (แอซีตัลดีไฮด์)', en: 'Acetaldehyde', test: aldehyde, dTh: 'แอลดีไฮด์ที่เกิดเมื่อร่างกายย่อยแอลกอฮอล์', dEn: 'An aldehyde formed when the body breaks down alcohol.' },
+  { f: 'C6H5OH', th: 'ฟีนอล', en: 'Phenol', test: hasOH, dTh: 'หมู่ OH ต่อกับวงเบนซีน ใช้ฆ่าเชื้อ', dEn: 'An OH group on a benzene ring; an antiseptic.' },
+  // กรดอินทรีย์และเอสเทอร์
+  { f: 'C2H5COOH', th: 'กรดโพรพาโนอิก', en: 'Propanoic acid', test: hasOH, dTh: 'ใช้เป็นสารกันเสียในขนมปัง', dEn: 'Used as a bread preservative.' },
+  { f: 'CH3COOCH3', th: 'เมทิลแอซีเตต', en: 'Methyl acetate', test: (c) => !hasOH(c) && carbonylC(c).some((a) => countNb(a, 'C') === 1), dTh: 'เอสเทอร์ ไอโซเมอร์ของกรดโพรพาโนอิก', dEn: 'An ester; an isomer of propanoic acid.' },
+  { f: 'HCOOC2H5', th: 'เอทิลฟอร์เมต', en: 'Ethyl formate', test: (c) => !hasOH(c) && aldehyde(c), dTh: 'เอสเทอร์กลิ่นรัม', dEn: 'An ester that smells of rum.' },
+  { f: 'CH3COOC2H5', th: 'เอทิลแอซีเตต', en: 'Ethyl acetate', test: (c) => !hasOH(c), dTh: 'เอสเทอร์กลิ่นผลไม้ ใช้ในน้ำยาล้างเล็บ', dEn: 'A fruity-smelling ester in nail-polish remover.' },
+  { f: 'CH3CH(OH)COOH', th: 'กรดแลกติก', en: 'Lactic acid', test: hasOH, dTh: 'เกิดในกล้ามเนื้อเมื่อออกกำลังกายหนัก และในนมเปรี้ยว', dEn: 'Made in muscles during hard exercise, and in sour milk.' },
+  { f: 'C6H8O7', th: 'กรดซิตริก', en: 'Citric acid', dTh: 'กรดในมะนาวและส้ม', dEn: 'The acid in lemons and oranges.' },
+  { f: 'C6H5COOH', th: 'กรดเบนโซอิก', en: 'Benzoic acid', test: hasOH, dTh: 'สารกันบูดในอาหาร', dEn: 'A food preservative.' },
+  { f: 'C9H8O4', th: 'แอสไพริน', en: 'Aspirin', dTh: 'ยาแก้ปวดลดไข้', dEn: 'A painkiller and fever reducer.' },
+  // สารชีวโมเลกุล
+  { f: 'C6H12O6', th: 'กลูโคส', en: 'Glucose', test: aldehyde, dTh: 'น้ำตาลโมเลกุลเดี่ยว แหล่งพลังงานของเซลล์ (โครงสร้างแบบโซ่เปิด มีหมู่แอลดีไฮด์)', dEn: 'A simple sugar and the cell’s energy source (open-chain form, aldehyde group).' },
+  { f: 'C6H12O6', id: 'fructose', th: 'ฟรักโทส', en: 'Fructose', test: ketone, dTh: 'น้ำตาลในผลไม้ ไอโซเมอร์ของกลูโคส (มีหมู่คีโตน)', dEn: 'Fruit sugar; an isomer of glucose with a ketone group.' },
+  { f: 'NH2CH2COOH', th: 'ไกลซีน', en: 'Glycine', test: hasOH, dTh: 'กรดแอมิโนที่เล็กที่สุด หน่วยย่อยของโปรตีน', dEn: 'The smallest amino acid, a building block of proteins.' },
+  { f: 'CH3CH(NH2)COOH', th: 'อะลานีน', en: 'Alanine', test: (c) => hasOH(c) && hasBond(c, 'N', 'H'), dTh: 'กรดแอมิโนที่พบมากในโปรตีน', dEn: 'A common amino acid in proteins.' },
+  { f: 'CH3NH2', th: 'เมทิลแอมีน', en: 'Methylamine', dTh: 'แอมีนอย่างง่าย กลิ่นคาวปลา', dEn: 'A simple amine with a fishy smell.' },
+  { f: 'C8H10N4O2', th: 'คาเฟอีน', en: 'Caffeine', dTh: 'สารกระตุ้นในกาแฟและชา', dEn: 'The stimulant in coffee and tea.' },
+  // อนินทรีย์ที่เป็นกลาง
+  { f: 'H2CO3', th: 'กรดคาร์บอนิก', en: 'Carbonic acid', dTh: 'เกิดเมื่อ CO₂ ละลายในน้ำ ทำให้น้ำอัดลมซ่า', dEn: 'Forms when CO₂ dissolves in water; makes soda fizzy.' },
+  { f: 'HNO2', th: 'กรดไนตรัส', en: 'Nitrous acid', dTh: 'กรดอ่อน H–O–N=O', dEn: 'A weak acid, H–O–N=O.' },
+  { f: 'H2SO3', th: 'กรดซัลฟิวรัส', en: 'Sulfurous acid', test: xWithO('S', 3), dTh: 'เกิดเมื่อ SO₂ ละลายในน้ำฝน', dEn: 'Forms when SO₂ dissolves in rain.' },
+  { f: 'HClO3', th: 'กรดคลอริก', en: 'Chloric acid', test: xWithO('Cl', 3), dTh: 'กรดแก่ที่เป็นตัวออกซิไดซ์', dEn: 'A strong oxidising acid.' },
+  { f: 'HClO4', th: 'กรดเปอร์คลอริก', en: 'Perchloric acid', test: xWithO('Cl', 4), dTh: 'หนึ่งในกรดที่แก่ที่สุด', dEn: 'One of the strongest acids.' },
+  { f: 'CS2', th: 'คาร์บอนไดซัลไฟด์', en: 'Carbon disulfide', dTh: 'เส้นตรง S=C=S เหมือน CO₂', dEn: 'Linear S=C=S, like CO₂.' },
+  { f: 'COCl2', th: 'ฟอสจีน', en: 'Phosgene', dTh: 'แก๊สพิษ สามเหลี่ยมแบนราบ', dEn: 'A toxic gas; trigonal planar.' },
+  { f: 'SiH4', th: 'ไซเลน', en: 'Silane', dTh: 'ทรงสี่หน้าเหมือนมีเทน', dEn: 'Tetrahedral, like methane.' },
+  { f: 'SiCl4', th: 'ซิลิคอนเตตระคลอไรด์', en: 'Silicon tetrachloride', dTh: 'ใช้ผลิตซิลิคอนบริสุทธิ์สำหรับชิป', dEn: 'Used to make pure silicon for chips.' },
+  { f: 'NCl3', th: 'ไนโตรเจนไตรคลอไรด์', en: 'Nitrogen trichloride', dTh: 'พีระมิดฐานสามเหลี่ยม ระเบิดง่าย', dEn: 'Trigonal pyramidal and explosive.' },
+  { f: 'NF3', th: 'ไนโตรเจนไตรฟลูออไรด์', en: 'Nitrogen trifluoride', dTh: 'ใช้ทำความสะอาดเครื่องผลิตชิป', dEn: 'Used to clean chip-making equipment.' },
+  { f: 'OF2', th: 'ออกซิเจนไดฟลูออไรด์', en: 'Oxygen difluoride', dTh: 'มุมงอเหมือนน้ำ', dEn: 'Bent, like water.' },
+  { f: 'Cl2O', th: 'ไดคลอรีนมอนอกไซด์', en: 'Dichlorine monoxide', dTh: 'มุมงอ ใช้ฟอกขาว', dEn: 'Bent; used as a bleach.' },
+  { f: 'SF4', th: 'ซัลเฟอร์เตตระฟลูออไรด์', en: 'Sulfur tetrafluoride', dTh: 'รูปไม้กระดก (S มีคู่โดดเดี่ยว 1 คู่)', dEn: 'Seesaw-shaped (S has one lone pair).' },
+  { f: 'ClF3', th: 'คลอรีนไตรฟลูออไรด์', en: 'Chlorine trifluoride', dTh: 'รูปตัวที (Cl มีคู่โดดเดี่ยว 2 คู่)', dEn: 'T-shaped (Cl has two lone pairs).' },
+  { f: 'BrF5', th: 'โบรมีนเพนตะฟลูออไรด์', en: 'Bromine pentafluoride', dTh: 'พีระมิดฐานสี่เหลี่ยม', dEn: 'Square pyramidal.' },
+  { f: 'P4', th: 'ฟอสฟอรัสขาว', en: 'White phosphorus', dTh: 'P สี่อะตอมเรียงเป็นทรงสี่หน้า ติดไฟเองในอากาศ', dEn: 'Four P atoms in a tetrahedron; ignites in air.' },
+  { f: 'S8', th: 'กำมะถัน (S₈)', en: 'Sulfur (S₈)', dTh: 'วงแปดเหลี่ยมรูปมงกุฎ', dEn: 'A crown-shaped eight-membered ring.' },
+  // สารประกอบไอออนิกเพิ่มเติม
+  { f: 'LiCl', th: 'ลิเทียมคลอไรด์', en: 'Lithium chloride', dTh: 'ดูดความชื้นได้ดีมาก', dEn: 'Very good at absorbing moisture.' },
+  { f: 'NaBr', th: 'โซเดียมโบรไมด์', en: 'Sodium bromide', dTh: 'ใช้ฆ่าเชื้อในสระน้ำ', dEn: 'Used to disinfect pools.' },
+  { f: 'NaI', th: 'โซเดียมไอโอไดด์', en: 'Sodium iodide', dTh: 'แหล่งไอโอดีนในเกลือเสริมไอโอดีน', dEn: 'A source of iodine in iodised salt.' },
+  { f: 'KI', th: 'โพแทสเซียมไอโอไดด์', en: 'Potassium iodide', dTh: 'ใช้ทดสอบแป้งร่วมกับไอโอดีน', dEn: 'Used with iodine to test for starch.' },
+  { f: 'K2O', th: 'โพแทสเซียมออกไซด์', en: 'Potassium oxide', dTh: 'ใช้บอกปริมาณโพแทสเซียมในปุ๋ย', dEn: 'Used to express potassium content in fertilizer.' },
+  { f: 'Li2O', th: 'ลิเทียมออกไซด์', en: 'Lithium oxide', dTh: 'ใช้ในเซรามิกและแก้ว', dEn: 'Used in ceramics and glass.' },
+  { f: 'Na2S', th: 'โซเดียมซัลไฟด์', en: 'Sodium sulfide', dTh: 'ใช้ในอุตสาหกรรมฟอกหนัง', dEn: 'Used in leather tanning.' },
+  { f: 'CaF2', th: 'แคลเซียมฟลูออไรด์', en: 'Calcium fluoride', dTh: 'แร่ฟลูออไรต์', dEn: 'The mineral fluorite.' },
+  { f: 'BaCl2', th: 'แบเรียมคลอไรด์', en: 'Barium chloride', dTh: 'ใช้ทดสอบไอออนซัลเฟต (ได้ตะกอนขาว)', dEn: 'Used to test for sulfate ions (white precipitate).' },
+  { f: 'BaO', th: 'แบเรียมออกไซด์', en: 'Barium oxide', dTh: 'ออกไซด์ของโลหะแอลคาไลน์เอิร์ท', dEn: 'An alkaline-earth metal oxide.' },
+  { f: 'AlCl3', th: 'อะลูมิเนียมคลอไรด์', en: 'Aluminium chloride', dTh: 'ใช้ในยาระงับเหงื่อ', dEn: 'Used in antiperspirants.' },
+  { f: 'FeCl2', th: 'เหล็ก(II) คลอไรด์', en: 'Iron(II) chloride', dTh: 'สารละลายสีเขียวอ่อน', dEn: 'Forms a pale green solution.' },
+  { f: 'FeCl3', th: 'เหล็ก(III) คลอไรด์', en: 'Iron(III) chloride', dTh: 'ใช้กัดแผ่นวงจรพิมพ์', dEn: 'Used to etch circuit boards.' },
+  { f: 'FeO', th: 'เหล็ก(II) ออกไซด์', en: 'Iron(II) oxide', dTh: 'ผงสีดำ', dEn: 'A black powder.' },
+  { f: 'CuCl2', th: 'คอปเปอร์(II) คลอไรด์', en: 'Copper(II) chloride', dTh: 'ให้เปลวไฟสีเขียวอมฟ้า', dEn: 'Gives a blue-green flame.' },
+  { f: 'Cu2O', th: 'คอปเปอร์(I) ออกไซด์', en: 'Copper(I) oxide', dTh: 'ผงสีแดง ใช้ทดสอบน้ำตาล (เบเนดิกต์)', dEn: 'A red powder seen in Benedict’s sugar test.' },
+  { f: 'ZnCl2', th: 'ซิงค์คลอไรด์', en: 'Zinc chloride', dTh: 'ใช้เป็นฟลักซ์ในงานบัดกรี', dEn: 'Used as soldering flux.' },
+  { f: 'LiOH', th: 'ลิเทียมไฮดรอกไซด์', en: 'Lithium hydroxide', dTh: 'ใช้ดูด CO₂ ในยานอวกาศ', dEn: 'Absorbs CO₂ in spacecraft.' },
+  { f: 'Mg(OH)2', th: 'แมกนีเซียมไฮดรอกไซด์', en: 'Magnesium hydroxide', dTh: 'ยาลดกรด (มิลค์ออฟแมกนีเซีย)', dEn: 'An antacid (milk of magnesia).' },
+  { f: 'Al(OH)3', th: 'อะลูมิเนียมไฮดรอกไซด์', en: 'Aluminium hydroxide', dTh: 'ยาลดกรดในกระเพาะ', dEn: 'A stomach antacid.' },
+  { f: 'Ba(OH)2', th: 'แบเรียมไฮดรอกไซด์', en: 'Barium hydroxide', dTh: 'เบสแก่', dEn: 'A strong base.' },
+  { f: 'Na2CO3', th: 'โซเดียมคาร์บอเนต (โซดาแอช)', en: 'Sodium carbonate (soda ash)', dTh: 'ใช้ผลิตแก้วและผงซักฟอก', dEn: 'Used to make glass and detergent.' },
+);
+
+// ---------- กลุ่มที่ 2: ประจุฟอร์มอล อนุมูลอิสระ ไอออน และเกลือ ----------
+MOLECULES.push(
+  // โมเลกุลเป็นกลางที่มีประจุฟอร์มอล
+  { f: 'O3', th: 'โอโซน', en: 'Ozone', dTh: 'O=O⁺–O⁻ (เรโซแนนซ์) ชั้นโอโซนกรองรังสียูวี', dEn: 'O=O⁺–O⁻ (resonance); the ozone layer blocks UV.' },
+  { f: 'N2O', th: 'ไนตรัสออกไซด์ (แก๊สหัวเราะ)', en: 'Nitrous oxide (laughing gas)', test: (c) => hasBond(c, 'N', 'N'), dTh: 'N=N⁺=O⁻ หรือ N≡N⁺–O⁻ ใช้เป็นยาสลบ', dEn: 'N=N⁺=O⁻ or N≡N⁺–O⁻; an anaesthetic.' },
+  { f: 'N2O4', th: 'ไดไนโตรเจนเตตรอกไซด์', en: 'Dinitrogen tetroxide', dTh: 'เกิดจาก NO₂ สองโมเลกุลจับคู่อิเล็กตรอนเดี่ยวกัน', dEn: 'Two NO₂ molecules pair their unpaired electrons.' },
+  // อนุมูลอิสระ
+  { f: 'NO', th: 'ไนโตรเจนมอนอกไซด์', en: 'Nitric oxide', radical: true, dTh: 'อนุมูลอิสระ: มีอิเล็กตรอนรวมเป็นเลขคี่ จึงมีอิเล็กตรอนเดี่ยว 1 ตัวเสมอ', dEn: 'A radical: an odd number of electrons leaves one unpaired.' },
+  { f: 'NO2', th: 'ไนโตรเจนไดออกไซด์', en: 'Nitrogen dioxide', radical: true, dTh: 'อนุมูลอิสระสีน้ำตาลแดง ก่อหมอกควันพิษในเมือง', dEn: 'A red-brown radical that causes city smog.' },
+  { f: 'ClO2', th: 'คลอรีนไดออกไซด์', en: 'Chlorine dioxide', radical: true, dTh: 'อนุมูลอิสระที่ใช้ฆ่าเชื้อในน้ำดื่ม', dEn: 'A radical used to disinfect drinking water.' },
+  // ไอออนอะตอมเดี่ยว
+  { f: 'H', q: 1, th: 'ไฮโดรเจนไอออน (โปรตอน)', en: 'Hydrogen ion (proton)', dTh: 'ตัวกำหนดความเป็นกรด (pH)', dEn: 'Determines acidity (pH).' },
+  { f: 'H', q: -1, th: 'ไฮไดรด์ไอออน', en: 'Hydride ion', dTh: 'พบในสารประกอบเช่น NaH', dEn: 'Found in compounds such as NaH.' },
+  { f: 'Li', q: 1, th: 'ลิเทียมไอออน', en: 'Lithium ion', dTh: 'ตัวพาประจุในแบตเตอรี่ลิเทียมไอออน', dEn: 'The charge carrier in lithium-ion batteries.' },
+  { f: 'Na', q: 1, th: 'โซเดียมไอออน', en: 'Sodium ion', dTh: 'Na เสียอิเล็กตรอน 1 ตัว ได้การจัดเรียงเหมือน Ne', dEn: 'Na loses one electron to match neon.' },
+  { f: 'K', q: 1, th: 'โพแทสเซียมไอออน', en: 'Potassium ion', dTh: 'สำคัญต่อการทำงานของเส้นประสาท', dEn: 'Essential for nerve signals.' },
+  { f: 'Mg', q: 2, th: 'แมกนีเซียมไอออน', en: 'Magnesium ion', dTh: 'Mg เสียอิเล็กตรอน 2 ตัว', dEn: 'Mg loses two electrons.' },
+  { f: 'Ca', q: 2, th: 'แคลเซียมไอออน', en: 'Calcium ion', dTh: 'องค์ประกอบของกระดูกและฟัน', dEn: 'Found in bones and teeth.' },
+  { f: 'Ba', q: 2, th: 'แบเรียมไอออน', en: 'Barium ion', dTh: 'ให้เปลวไฟสีเขียว', dEn: 'Gives a green flame.' },
+  { f: 'Al', q: 3, th: 'อะลูมิเนียมไอออน', en: 'Aluminium ion', dTh: 'Al เสียอิเล็กตรอน 3 ตัว', dEn: 'Al loses three electrons.' },
+  { f: 'Fe', q: 2, th: 'เหล็ก(II) ไอออน', en: 'Iron(II) ion', dTh: 'สารละลายสีเขียวอ่อน', dEn: 'Pale green in solution.' },
+  { f: 'Fe', q: 3, th: 'เหล็ก(III) ไอออน', en: 'Iron(III) ion', dTh: 'สารละลายสีเหลืองน้ำตาล', dEn: 'Yellow-brown in solution.' },
+  { f: 'Cu', q: 1, th: 'คอปเปอร์(I) ไอออน', en: 'Copper(I) ion', dTh: 'ไอออนของทองแดงที่มีประจุ +1', dEn: 'Copper with a +1 charge.' },
+  { f: 'Cu', q: 2, th: 'คอปเปอร์(II) ไอออน', en: 'Copper(II) ion', dTh: 'สารละลายสีฟ้า', dEn: 'Blue in solution.' },
+  { f: 'Zn', q: 2, th: 'ซิงค์ไอออน', en: 'Zinc ion', dTh: 'แร่ธาตุจำเป็นต่อภูมิคุ้มกัน', dEn: 'A mineral the immune system needs.' },
+  { f: 'Ag', q: 1, th: 'ซิลเวอร์ไอออน', en: 'Silver ion', dTh: 'ฆ่าเชื้อแบคทีเรียได้', dEn: 'Kills bacteria.' },
+  { f: 'F', q: -1, th: 'ฟลูออไรด์ไอออน', en: 'Fluoride ion', dTh: 'ช่วยให้เคลือบฟันแข็งแรง', dEn: 'Strengthens tooth enamel.' },
+  { f: 'Cl', q: -1, th: 'คลอไรด์ไอออน', en: 'Chloride ion', dTh: 'Cl รับอิเล็กตรอน 1 ตัว ได้การจัดเรียงเหมือน Ar', dEn: 'Cl gains one electron to match argon.' },
+  { f: 'Br', q: -1, th: 'โบรไมด์ไอออน', en: 'Bromide ion', dTh: 'ไอออนลบของโบรมีน', dEn: 'The negative ion of bromine.' },
+  { f: 'I', q: -1, th: 'ไอโอไดด์ไอออน', en: 'Iodide ion', dTh: 'ไอออนลบของไอโอดีน', dEn: 'The negative ion of iodine.' },
+  { f: 'O', q: -2, th: 'ออกไซด์ไอออน', en: 'Oxide ion', dTh: 'O รับอิเล็กตรอน 2 ตัว', dEn: 'O gains two electrons.' },
+  { f: 'S', q: -2, th: 'ซัลไฟด์ไอออน', en: 'Sulfide ion', dTh: 'S รับอิเล็กตรอน 2 ตัว', dEn: 'S gains two electrons.' },
+  { f: 'N', q: -3, th: 'ไนไตรด์ไอออน', en: 'Nitride ion', dTh: 'N รับอิเล็กตรอน 3 ตัว', dEn: 'N gains three electrons.' },
+  // ไอออนหลายอะตอม
+  { f: 'OH', q: -1, th: 'ไฮดรอกไซด์ไอออน', en: 'Hydroxide ion', dTh: 'ไอออนที่ทำให้สารละลายเป็นเบส', dEn: 'The ion that makes solutions basic.' },
+  { f: 'H3O', q: 1, th: 'ไฮโดรเนียมไอออน', en: 'Hydronium ion', dTh: 'H⁺ จับกับน้ำ พีระมิดฐานสามเหลี่ยม', dEn: 'H⁺ attached to water; trigonal pyramidal.' },
+  { f: 'NH4', q: 1, th: 'แอมโมเนียมไอออน', en: 'Ammonium ion', dTh: 'ทรงสี่หน้า N มีพันธะ 4 พันธะจึงมีประจุ +1', dEn: 'Tetrahedral; N has four bonds so it carries +1.' },
+  { f: 'CN', q: -1, th: 'ไซยาไนด์ไอออน', en: 'Cyanide ion', dTh: 'C≡N⁻ เป็นพิษร้ายแรง', dEn: 'C≡N⁻; highly toxic.' },
+  { f: 'O2', q: -2, th: 'เปอร์ออกไซด์ไอออน', en: 'Peroxide ion', dTh: '⁻O–O⁻ พบใน Na₂O₂', dEn: '⁻O–O⁻, found in Na₂O₂.' },
+  { f: 'NO3', q: -1, th: 'ไนเตรตไอออน', en: 'Nitrate ion', dTh: 'สามเหลี่ยมแบนราบ ธาตุอาหารพืช', dEn: 'Trigonal planar; a plant nutrient.' },
+  { f: 'NO2', q: -1, th: 'ไนไตรต์ไอออน', en: 'Nitrite ion', dTh: 'มุมงอ ใช้ถนอมเนื้อสัตว์', dEn: 'Bent; used to cure meat.' },
+  { f: 'SO4', q: -2, th: 'ซัลเฟตไอออน', en: 'Sulfate ion', dTh: 'ทรงสี่หน้า', dEn: 'Tetrahedral.' },
+  { f: 'HSO4', q: -1, th: 'ไฮโดรเจนซัลเฟตไอออน', en: 'Hydrogen sulfate ion', dTh: 'เกิดเมื่อ H₂SO₄ เสีย H⁺ หนึ่งตัว', dEn: 'H₂SO₄ after losing one H⁺.' },
+  { f: 'SO3', q: -2, th: 'ซัลไฟต์ไอออน', en: 'Sulfite ion', dTh: 'พีระมิดฐานสามเหลี่ยม ใช้เป็นสารกันเสีย', dEn: 'Trigonal pyramidal; a preservative.' },
+  { f: 'S2O3', q: -2, th: 'ไทโอซัลเฟตไอออน', en: 'Thiosulfate ion', dTh: 'ใช้ในน้ำยาล้างฟิล์ม (ไฮโป)', dEn: 'Used as photographic fixer (hypo).' },
+  { f: 'CO3', q: -2, th: 'คาร์บอเนตไอออน', en: 'Carbonate ion', dTh: 'สามเหลี่ยมแบนราบ พบในหินปูน', dEn: 'Trigonal planar; found in limestone.' },
+  { f: 'HCO3', q: -1, th: 'ไฮโดรเจนคาร์บอเนตไอออน', en: 'Bicarbonate ion', dTh: 'บัฟเฟอร์ในเลือด', dEn: 'A buffer in blood.' },
+  { f: 'PO4', q: -3, th: 'ฟอสเฟตไอออน', en: 'Phosphate ion', dTh: 'ทรงสี่หน้า พบใน DNA และกระดูก', dEn: 'Tetrahedral; found in DNA and bone.' },
+  { f: 'HPO4', q: -2, th: 'ไฮโดรเจนฟอสเฟตไอออน', en: 'Hydrogen phosphate ion', dTh: 'บัฟเฟอร์ในเซลล์', dEn: 'A buffer in cells.' },
+  { f: 'ClO', q: -1, th: 'ไฮโปคลอไรต์ไอออน', en: 'Hypochlorite ion', dTh: 'สารฟอกขาวในน้ำยาซักผ้าขาว', dEn: 'The bleaching agent in laundry bleach.' },
+  { f: 'ClO3', q: -1, th: 'คลอเรตไอออน', en: 'Chlorate ion', dTh: 'ตัวออกซิไดซ์ในดอกไม้ไฟ', dEn: 'An oxidiser in fireworks.' },
+  { f: 'ClO4', q: -1, th: 'เปอร์คลอเรตไอออน', en: 'Perchlorate ion', dTh: 'ใช้ในเชื้อเพลิงจรวดแข็ง', dEn: 'Used in solid rocket fuel.' },
+  { f: 'MnO4', q: -1, th: 'เปอร์แมงกาเนตไอออน', en: 'Permanganate ion', dTh: 'สีม่วงเข้ม ตัวออกซิไดซ์แรง', dEn: 'Deep purple; a strong oxidiser.' },
+  { f: 'CrO4', q: -2, th: 'โครเมตไอออน', en: 'Chromate ion', dTh: 'สีเหลือง', dEn: 'Yellow.' },
+  { f: 'Cr2O7', q: -2, th: 'ไดโครเมตไอออน', en: 'Dichromate ion', dTh: 'สีส้ม ใช้ตรวจแอลกอฮอล์ในลมหายใจ', dEn: 'Orange; used in breath alcohol tests.' },
+  { f: 'CH3COO', q: -1, th: 'แอซีเตตไอออน', en: 'Acetate ion', dTh: 'เกิดเมื่อกรดแอซีติกเสีย H⁺', dEn: 'Acetic acid after losing H⁺.' },
+  { f: 'BF4', q: -1, th: 'เตตระฟลูออโรบอเรตไอออน', en: 'Tetrafluoroborate ion', dTh: 'B มีประจุ −1 จึงต่อได้ 4 พันธะ (ทรงสี่หน้า)', dEn: 'B carries −1 so it makes four bonds (tetrahedral).' },
+  // เกลือที่มีไอออนหลายอะตอม (วางไอออนบวกและลบไว้ใกล้กัน หรือเชื่อมโลหะกับ O ของไอออนลบ)
+  { f: 'NH4Cl', th: 'แอมโมเนียมคลอไรด์', en: 'Ammonium chloride', dTh: 'NH₄⁺ + Cl⁻ ใช้ในถ่านไฟฉาย', dEn: 'NH₄⁺ + Cl⁻; used in dry-cell batteries.' },
+  { f: 'NH4NO3', th: 'แอมโมเนียมไนเตรต', en: 'Ammonium nitrate', dTh: 'ปุ๋ยไนโตรเจน ละลายน้ำแล้วเย็น', dEn: 'A nitrogen fertilizer; dissolving it feels cold.' },
+  { f: '(NH4)2SO4', th: 'แอมโมเนียมซัลเฟต', en: 'Ammonium sulfate', dTh: 'ปุ๋ยแอมโมเนียม (ปุ๋ยสูตร 21-0-0)', dEn: 'An ammonium fertilizer (21-0-0).' },
+  { f: 'KNO3', th: 'โพแทสเซียมไนเตรต (ดินประสิว)', en: 'Potassium nitrate (saltpetre)', dTh: 'ส่วนผสมของดินปืนและปุ๋ย', dEn: 'An ingredient of gunpowder and fertilizer.' },
+  { f: 'NaNO3', th: 'โซเดียมไนเตรต', en: 'Sodium nitrate', dTh: 'ปุ๋ยและสารกันเสีย', dEn: 'A fertilizer and preservative.' },
+  { f: 'AgNO3', th: 'ซิลเวอร์ไนเตรต', en: 'Silver nitrate', dTh: 'ใช้ทดสอบไอออนคลอไรด์ (ได้ตะกอนขาว AgCl)', dEn: 'Tests for chloride (white AgCl precipitate).' },
+  { f: 'CuSO4', th: 'คอปเปอร์(II) ซัลเฟต (จุนสี)', en: 'Copper(II) sulfate', dTh: 'ผลึกสีฟ้า ใช้กำจัดตะไคร่', dEn: 'Blue crystals used to kill algae.' },
+  { f: 'FeSO4', th: 'เหล็ก(II) ซัลเฟต', en: 'Iron(II) sulfate', dTh: 'ยาบำรุงเลือด', dEn: 'An iron supplement.' },
+  { f: 'MgSO4', th: 'แมกนีเซียมซัลเฟต (ดีเกลือ)', en: 'Magnesium sulfate (Epsom salt)', dTh: 'ใช้เป็นยาระบายและแช่เท้า', dEn: 'A laxative and bath salt.' },
+  { f: 'CaSO4', th: 'แคลเซียมซัลเฟต (ยิปซัม)', en: 'Calcium sulfate (gypsum)', dTh: 'ปูนปลาสเตอร์และแผ่นยิปซัม', dEn: 'Plaster and drywall.' },
+  { f: 'BaSO4', th: 'แบเรียมซัลเฟต', en: 'Barium sulfate', dTh: 'ดื่มก่อนเอกซเรย์ทางเดินอาหาร', dEn: 'Swallowed before gut X-rays.' },
+  { f: 'Na2SO4', th: 'โซเดียมซัลเฟต', en: 'Sodium sulfate', dTh: 'ส่วนผสมในผงซักฟอก', dEn: 'An ingredient of detergent powder.' },
+  { f: 'KMnO4', th: 'โพแทสเซียมเปอร์แมงกาเนต (ด่างทับทิม)', en: 'Potassium permanganate', dTh: 'ใช้ฆ่าเชื้อโรคล้างผักผลไม้', dEn: 'Used to disinfect fruit and vegetables.' },
+  { f: 'K2Cr2O7', th: 'โพแทสเซียมไดโครเมต', en: 'Potassium dichromate', dTh: 'ผลึกสีส้ม ตัวออกซิไดซ์', dEn: 'Orange crystals; an oxidiser.' },
+  { f: 'NaClO', th: 'โซเดียมไฮโปคลอไรต์', en: 'Sodium hypochlorite', dTh: 'น้ำยาฟอกผ้าขาว', dEn: 'Household bleach.' },
+  { f: 'KClO3', th: 'โพแทสเซียมคลอเรต', en: 'Potassium chlorate', dTh: 'ใช้ในหัวไม้ขีดไฟ', dEn: 'Used in match heads.' },
+  { f: 'Na3PO4', th: 'โซเดียมฟอสเฟต', en: 'Sodium phosphate', dTh: 'สารทำความสะอาด', dEn: 'A cleaning agent.' },
+  { f: 'Ca3(PO4)2', th: 'แคลเซียมฟอสเฟต', en: 'Calcium phosphate', dTh: 'องค์ประกอบหลักของกระดูกและฟัน', dEn: 'The main mineral in bones and teeth.' },
+  { f: 'CH3COONa', th: 'โซเดียมแอซีเตต', en: 'Sodium acetate', dTh: 'ใช้ในถุงร้อนแบบกดแล้วอุ่น', dEn: 'Used in click-to-heat hand warmers.' },
+  { f: 'Na2S2O3', th: 'โซเดียมไทโอซัลเฟต (ไฮโป)', en: 'Sodium thiosulfate', dTh: 'ใช้กำจัดคลอรีนในน้ำเลี้ยงปลา', dEn: 'Removes chlorine from aquarium water.' },
+);
+
+const SUPER = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+/** ประจุแบบตัวยก เช่น 2- → ²⁻ */
+export function chargeSuffix(q) {
+  if (!q) return '';
+  const n = Math.abs(q);
+  return (n > 1 ? String(n).replace(/\d/g, (d) => SUPER[d]) : '') + (q > 0 ? '⁺' : '⁻');
+}
+
 // ---------- สูตรเคมี ----------
 export function parseFormula(f) {
   // รองรับวงเล็บหนึ่งชั้น เช่น Ca(OH)2, CO(NH2)2
@@ -131,19 +308,22 @@ export function prettyFormula(f) {
   return f.replace(/\d/g, (d) => SUB[Number(d)]);
 }
 
+const keyOf = (hill, q) => (q ? `${hill}[${q}]` : hill);
 const INDEX = new Map();
 for (const m of MOLECULES) {
-  m.key = hillFormula(parseFormula(m.f));
-  m.id = m.f;
+  m.q = m.q || 0;
+  m.key = keyOf(hillFormula(parseFormula(m.f)), m.q);
+  m.id = m.id || (m.q ? `${m.f}${m.q > 0 ? '+' : ''}${m.q}` : m.f);
   if (!INDEX.has(m.key)) INDEX.set(m.key, []);
   INDEX.get(m.key).push(m);
 }
 
-export function findMolecule(hill, comp, complete) {
-  const list = INDEX.get(hill);
+export function findMolecule(hill, comp, complete, q = 0) {
+  const list = INDEX.get(keyOf(hill, q));
   if (!list) return null;
   for (const m of list) {
-    if (!complete && !m.allowIncomplete) continue;
+    // อนุมูลอิสระจับคู่เฉพาะตอนที่ยังมีอิเล็กตรอนเดี่ยว (ไม่ครบเวเลนซ์)
+    if (complete ? m.radical : !(m.allowIncomplete || m.radical)) continue;
     if (m.test && !m.test(comp)) continue;
     return m;
   }

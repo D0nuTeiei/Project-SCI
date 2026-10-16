@@ -217,7 +217,7 @@ function valenceElectronsOf(z, group) {
 // เวเลนซ์ที่อนุญาต (จำนวนพันธะรวม) — แบบจำลองอย่างง่ายสำหรับการเรียนรู้
 const VALENCE_OVERRIDE = {
   H: [1], He: [0], Ne: [0], Ar: [0], Rn: [0], Og: [0], Kr: [0, 2], Xe: [0, 2, 4, 6],
-  B: [3], C: [4], N: [3, 5], O: [2], F: [1],
+  B: [3], C: [4], N: [3], O: [2], F: [1],
   Al: [3], Si: [4], P: [3, 5], S: [2, 4, 6], Cl: [1, 3, 5, 7],
   Ge: [4], As: [3, 5], Se: [2, 4, 6], Br: [1, 3, 5],
   Sn: [2, 4], Sb: [3, 5], Te: [2, 4, 6], I: [1, 3, 5, 7], Pb: [2, 4], Bi: [3],
@@ -227,7 +227,8 @@ const VALENCE_OVERRIDE = {
   Th: [4], U: [4, 6],
 };
 // จำนวนอะตอมที่ต่อได้สูงสุด (ถ้าไม่ระบุ = ค่าเวเลนซ์สูงสุด)
-const MAX_NEIGHBORS = { N: 3, Cl: 4, Br: 5, I: 5, Os: 4, Mn: 4, Re: 4, Tc: 4 };
+// N/O/B/Al ต่อได้มากกว่าเวเลนซ์ปกติเมื่อมีประจุ เช่น NH₄⁺, H₃O⁺, BF₄⁻, AlCl₄⁻
+const MAX_NEIGHBORS = { N: 4, O: 3, B: 4, Al: 4, Cl: 4, Br: 5, I: 5, Os: 4, Mn: 4, Re: 4, Tc: 4 };
 
 function valenceOf(sym, z, group, cat) {
   if (VALENCE_OVERRIDE[sym]) return VALENCE_OVERRIDE[sym];
@@ -294,6 +295,30 @@ for (const line of RAW.trim().split('\n')) {
   };
   ELEMENTS.push(el);
   BY_SYMBOL[symbol] = el;
+}
+
+const METALS = new Set(['alkali', 'alkaline', 'transition', 'post-transition', 'lanthanide', 'actinide']);
+export function isMetal(el) {
+  return METALS.has(el.category);
+}
+
+/**
+ * เวเลนซ์ที่อนุญาตเมื่ออะตอมมีประจุ (ฟอร์มอล) — ใช้หลักไอโซอิเล็กทรอนิก:
+ * N⁺ มีอิเล็กตรอนวงนอกเท่า C จึงต่อได้ 4 พันธะ, O⁻ เท่า F ต่อได้ 1, Na⁺ เท่าแก๊สมีตระกูล ต่อไม่ได้
+ */
+export function valencesFor(el, charge) {
+  if (!charge) return el.valences;
+  if (el.symbol === 'H') return [0]; // H⁺ หรือ H⁻ อยู่เดี่ยว ๆ
+  const ve = el.valenceElectrons;
+  if (ve == null) return el.valences.map((v) => v - charge).filter((v) => v >= 0);
+  const v = ve - charge;
+  if (v < 0 || v > 8) return [];
+  const expanded = el.period >= 3;
+  if (v <= 4) return [v];
+  if (v === 5) return expanded ? [3, 5] : [3];
+  if (v === 6) return expanded ? [2, 4, 6] : [2];
+  if (v === 7) return expanded ? [1, 3, 5, 7] : [1];
+  return [0];
 }
 
 export function elementName(el, lang) {

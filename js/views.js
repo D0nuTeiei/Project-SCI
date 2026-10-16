@@ -1,7 +1,8 @@
 // การแสดงผลอะตอม พันธะ ป้ายชื่อโมเลกุล และเอฟเฟกต์
 import * as THREE from 'three';
 import { atomRadius, isOverstretched } from './physics.js';
-import { analyze, bondTypeOf } from './chemistry.js';
+import { analyze, bondTypeOf, suggestCharge, ionClusters } from './chemistry.js';
+import { chargeSuffix } from './molecules.js';
 import { elementName } from './elements.js';
 import { TextSprite } from './textures.js';
 import { t, getLang } from './i18n.js';
@@ -54,8 +55,27 @@ class AtomView {
     parent.add(this.group);
     this.radius = r;
     this.spawnT = 0;
+    this.badge = null; // ป้ายประจุฟอร์มอล (สร้างเมื่อมีประจุ)
   }
-  dispose() { this.group.removeFromParent(); }
+  setCharge(q, parent) {
+    if (!q) {
+      if (this.badge) this.badge.visible = false;
+      return;
+    }
+    if (!this.badge) {
+      this.badge = new TextSprite([], { worldHeightPerPx: 0.00024 });
+      this.badge.renderOrder = 12;
+      parent.add(this.badge);
+    }
+    this.badge.visible = true;
+    // ประจุบวกสีน้ำเงิน ประจุลบสีแดง (ตามแผนที่ศักย์ไฟฟ้า)
+    this.badge.background = q > 0 ? 'rgba(40, 110, 230, 0.92)' : 'rgba(220, 50, 60, 0.92)';
+    this.badge.setLines([{ text: (Math.abs(q) > 1 ? Math.abs(q) : '') + (q > 0 ? '+' : '−'), size: 40, weight: 700 }]);
+  }
+  dispose() {
+    this.group.removeFromParent();
+    if (this.badge) { this.badge.removeFromParent(); this.badge.dispose(); }
+  }
 }
 
 class BondView {
@@ -93,6 +113,13 @@ function placeRod(mesh, p, q, radius) {
 
 export function labelLines(info) {
   const lang = getLang();
+  if (info.single && info.charge) {
+    const el = info.single.el;
+    const name = info.entry ? (lang === 'th' ? info.entry.th : info.entry.en) : `${t('ion')} ${elementName(el, lang)}`;
+    const lines = [{ text: `${info.pretty} · ${name}`, size: 44 }];
+    if (!info.complete) lines.push({ text: t('impossibleIon'), size: 28, color: '#ffcf8a' });
+    return lines;
+  }
   if (info.single) {
     const el = info.single.el;
     const lines = [{ text: `${el.symbol} · ${elementName(el, lang)}`, size: 44 }];
@@ -102,11 +129,20 @@ export function labelLines(info) {
   }
   if (info.entry) {
     const name = lang === 'th' ? info.entry.th : info.entry.en;
-    return [{ text: `${name} · ${info.pretty}`, size: 46, color: '#ffffff' }];
+    const lines = [{ text: `${name} · ${info.pretty}`, size: 46, color: '#ffffff' }];
+    if (info.radical) lines.push({ text: t('radicalNote'), size: 28, color: '#ffcf8a' });
+    return lines;
   }
   if (info.complete) return [{ text: info.pretty, size: 46 }, { text: t('completeUnknown'), size: 28, color: '#9fe8b0' }];
-  return [{ text: info.pretty, size: 46 }, { text: `${t('incomplete')} · ${t('needMore', info.missing)}`, size: 28, color: '#ffcf8a' }];
+  const why = info.hint ? t('tryCharge', info.hint) : info.missing > 0 ? t('needMore', info.missing) : t('overValence');
+  return [{ text: info.pretty, size: 46 }, { text: `${t('incomplete')} · ${why}`, size: 28, color: '#ffcf8a' }];
 }
+
+/** ประจุแบบอ่านง่าย เช่น +1, −2 */
+export function chargeText(q) {
+  return `${q > 0 ? '+' : '−'}${Math.abs(q)}`;
+}
+export { chargeSuffix };
 
 class Burst {
   constructor(parent, center, color) {
@@ -154,6 +190,15 @@ export class MoleculeViews {
     this.bondViews = new Map();
     this.labels = new Map(); // key -> { sprite, comp, info }
     this.analyses = [];
+    this.clusters = new Map(); // ไอออนที่อยู่ใกล้กันเป็นเกลือ key -> { sprite, data }
+    this.newClusters = [];
+    this.clusterTimer = 0;
+    this.ionLines = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0xc9a6ff, dashSize: 0.006, gapSize: 0.005, transparent: true, opacity: 0.9 }),
+    );
+    this.ionLines.frustumCulled = false;
+    parent.add(this.ionLines);
     this.version = -1;
     this.langKey = '';
     this.bursts = [];
@@ -183,6 +228,7 @@ export class MoleculeViews {
     for (const comp of this.sys.components()) {
       const key = comp.atoms.map((a) => a.id).sort((x, y) => x - y).join(',');
       const info = analyze(comp);
+      if (!info.complete && !info.entry) info.hint = suggestCharge(comp);
       let entry = this.labels.get(key);
       if (!entry) entry = { sprite: new TextSprite(), key };
       entry.comp = comp;
@@ -194,7 +240,41 @@ export class MoleculeViews {
     }
     for (const [key, e] of this.labels) if (!next.has(key)) { e.sprite.removeFromParent(); e.sprite.dispose(); }
     this.labels = next;
+    for (const [atom, v] of this.atomViews) v.setCharge(atom.charge, this.root);
+    this.clusterTimer = 1; // คำนวณกลุ่มไอออนใหม่ในเฟรมถัดไป
+    for (const c of this.clusters.values()) c.sprite.key = '';
     return structural;
+  }
+
+  /** รวมไอออนที่อยู่ใกล้กันเป็นเกลือ (เรียกเป็นระยะ เพราะไอออนเคลื่อนที่ได้โดยไม่เปลี่ยนโครงสร้าง) */
+  updateClusters() {
+    const lang = getLang();
+    const found = ionClusters(this.analyses);
+    const next = new Map();
+    for (const c of found) {
+      let view = this.clusters.get(c.key);
+      if (!view) {
+        view = { sprite: new TextSprite([], { background: 'rgba(60, 30, 100, 0.7)' }) };
+        this.root.add(view.sprite);
+        if (c.entry) this.newClusters.push(c);
+      }
+      view.data = c;
+      const name = c.entry ? `${lang === 'th' ? c.entry.th : c.entry.en} · ${c.pretty}` : c.pretty;
+      view.sprite.setLines([
+        { text: name, size: 46 },
+        { text: c.entry ? c.ions : `${c.ions} · ${t('completeUnknown')}`, size: 28, color: '#d9c4ff' },
+      ]);
+      next.set(c.key, view);
+    }
+    for (const [key, v] of this.clusters) if (!next.has(key)) { v.sprite.removeFromParent(); v.sprite.dispose(); }
+    this.clusters = next;
+  }
+
+  /** กลุ่มเกลือที่เพิ่งเกิด (สำหรับแจ้งเตือน/ภารกิจ) */
+  takeNewClusters() {
+    const out = this.newClusters;
+    this.newClusters = [];
+    return out;
   }
 
   burst(center, color = 0x7dffcf) {
@@ -271,6 +351,44 @@ export class MoleculeViews {
     if (state.preview) {
       placeRod(this.preview, state.preview.a.pos, state.preview.b.pos, 0.003);
     } else this.preview.visible = false;
+
+    // ป้ายประจุติดมุมขวาบนของอะตอม (หันตามกล้อง)
+    _perp.set(1, 0.8, 0).applyQuaternion(state.ringQuat);
+    for (const v of this.atomViews.values()) {
+      if (v.badge?.visible) v.badge.position.copy(v.atom.pos).addScaledVector(_perp, v.radius * 0.75);
+    }
+
+    // กลุ่มไอออน (เกลือ): ป้ายรวม + เส้นประเชื่อมไอออน
+    this.clusterTimer += dt;
+    if (this.clusterTimer > 0.25) { this.clusterTimer = 0; this.updateClusters(); }
+    const pts = [];
+    for (const c of this.clusters.values()) {
+      const ms = c.data.members;
+      let x = 0; let z = 0; let top = -Infinity; let n = 0;
+      const centers = ms.map((m) => {
+        const p = new THREE.Vector3();
+        for (const a of m.comp.atoms) { p.add(a.pos); top = Math.max(top, a.pos.y + atomRadius(a.el)); }
+        p.divideScalar(m.comp.atoms.length);
+        x += p.x; z += p.z; n++;
+        return p;
+      });
+      c.sprite.position.set(x / n, top + 0.06, z / n);
+      // เชื่อมไอออนแต่ละตัวกับไอออนประจุตรงข้ามที่ใกล้ที่สุด (ไม่วาดซ้ำ)
+      const drawn = new Set();
+      ms.forEach((m, i) => {
+        let best = -1; let bd = Infinity;
+        ms.forEach((o, j) => {
+          if (i === j || Math.sign(o.info.charge) === Math.sign(m.info.charge)) return;
+          const d = centers[i].distanceTo(centers[j]);
+          if (d < bd) { bd = d; best = j; }
+        });
+        const k = `${Math.min(i, best)}-${Math.max(i, best)}`;
+        if (best >= 0 && !drawn.has(k)) { drawn.add(k); pts.push(centers[i], centers[best]); }
+      });
+    }
+    this.ionLines.geometry.setFromPoints(pts);
+    this.ionLines.computeLineDistances();
+    this.ionLines.visible = pts.length > 0;
 
     // ป้ายชื่อเหนือโมเลกุล
     for (const e of this.labels.values()) {

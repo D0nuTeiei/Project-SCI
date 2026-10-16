@@ -219,5 +219,7 @@ body.in-xr #challenge-bar { top: 60px; }
   .info-head h2 { font-size: 17px; }
   #challenge-bar { top: 58px; font-size: 14px; }
   #toast { top: 108px; }
-  #toolbar button { padding: 7px 11px; font-size: 14px; }
+  #toolbar { gap: 4px; }
+  #toolbar button { padding: 7px 10px; font-size: 14px; }
+  #toolbar button span { display: none; }
 }

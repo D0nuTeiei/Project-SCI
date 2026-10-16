@@ -1,8 +1,12 @@
 // โหมดภารกิจ: ให้นักเรียนสร้างโมเลกุลตามโจทย์ทีละข้อ
-import { moleculeById, prettyFormula } from './molecules.js';
+import { moleculeById, prettyFormula, chargeSuffix } from './molecules.js';
 import { getLang } from './i18n.js';
 
-const LIST = ['H2', 'H2O', 'O2', 'CO2', 'NH3', 'CH4', 'HCl', 'N2', 'C2H4', 'CH3OH', 'HCN', 'C2H5OH', 'NaCl', 'H2O2', 'CH3COOH', 'C6H6'];
+// เพิ่มข้อใหม่ต่อท้ายเสมอ เพื่อไม่ให้ความคืบหน้าที่บันทึกไว้เพี้ยน
+const LIST = [
+  'H2', 'H2O', 'O2', 'CO2', 'NH3', 'CH4', 'HCl', 'N2', 'C2H4', 'CH3OH', 'HCN', 'C2H5OH', 'NaCl', 'H2O2', 'CH3COOH', 'C6H6',
+  'Na+1', 'Cl-1', 'OH-1', 'NH4+1', 'O3', 'CO', 'NO3-1', 'CO3-2', 'SO4-2', 'NH4Cl', 'CaCO3', 'C6H12O6',
+];
 
 export class Challenge {
   constructor() {
@@ -29,7 +33,7 @@ export class Challenge {
     if (this.done) return tFn('challengeAll');
     const m = this.current();
     const name = getLang() === 'th' ? m.th : m.en;
-    return `🎯 ${this.index + 1}/${LIST.length} · ${tFn('challengeBuild')} ${prettyFormula(m.f)} (${name})`;
+    return `🎯 ${this.index + 1}/${LIST.length} · ${tFn('challengeBuild')} ${prettyFormula(m.f)}${chargeSuffix(m.q)} (${name})`;
   }
 
   /** ตรวจว่ามีโมเลกุลที่ตรงกับโจทย์หรือยัง คืนค่า entry ถ้าสำเร็จ */

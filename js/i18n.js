@@ -64,6 +64,25 @@ const STRINGS = {
     broke: 'พันธะขาด',
     recycled: 'ลบแล้ว',
     embedNote: 'หน้านี้เปิดอยู่ในโหมด 3D (เมาส์/ทัช) — โหมด AR, VR และกล้องต้องเปิดจากเว็บไซต์ของโปรเจกต์ที่โฮสต์ผ่าน HTTPS เช่น GitHub Pages',
+    chargePlus: 'ประจุ +',
+    chargeMinus: 'ประจุ −',
+    chargePlusTitle: 'ดึงอิเล็กตรอนออก 1 ตัว (ประจุ +1)',
+    chargeMinusTitle: 'เติมอิเล็กตรอน 1 ตัว (ประจุ −1)',
+    tryCharge: (q) => `ลองทำเป็นไอออนประจุ ${q > 0 ? '+' : '−'}${Math.abs(q)}`,
+    overValence: 'พันธะเกินเวเลนซ์',
+    radicalNote: 'อนุมูลอิสระ: มีอิเล็กตรอนเดี่ยว',
+    impossibleIon: 'ไอออนนี้ไม่เสถียร',
+    ion: 'ไอออน',
+    netCharge: 'ประจุสุทธิ',
+    ions: 'ไอออน',
+    formalCharges: 'ประจุฟอร์มอล',
+    hint: 'คำใบ้',
+    hintCharge: (q) => `ถ้า${q > 0 ? 'ดึงอิเล็กตรอนออก' : 'เติมอิเล็กตรอน'} ${Math.abs(q)} ตัว (ประจุ ${q > 0 ? '+' : '−'}${Math.abs(q)}) จะครบ — กดปุ่ม "ประจุ ${q > 0 ? '+' : '−'}"`,
+    lostElectron: (f) => `ดึงอิเล็กตรอนออก 1 ตัว → ${f}`,
+    gainedElectron: (f) => `เติมอิเล็กตรอน 1 ตัว → ${f}`,
+    chargeLimit: 'ประจุถึงขีดจำกัดแล้ว (±3)',
+    selectAtomFirst: 'แตะเลือกอะตอมก่อน แล้วค่อยกดปุ่มประจุ',
+    saltFormed: (n) => `🧂 ไอออนรวมกันเป็น ${n}`,
     detachHint: 'กดค้าง (หรือ Shift+ลาก) ที่อะตอมเพื่อดึงออกจากโมเลกุล • แตะสองครั้งเพื่อแยกอะตอม',
     helpBody: `
       <h3>สร้างโมเลกุล</h3>
@@ -79,6 +98,13 @@ const STRINGS = {
         <li>กดค้าง/Shift+ลาก (หรือใช้สองมือใน VR จับคนละอะตอม) แล้วดึงจนพันธะเป็นสีส้ม ปล่อยเพื่อตัดพันธะ</li>
         <li>แตะอะตอมสองครั้งติดกัน = แยกอะตอมนั้นออก</li>
         <li>ลากไปปล่อยที่ถังรีไซเคิลเพื่อลบ</li>
+      </ul>
+      <h3>ประจุ ไอออน และเกลือ</h3>
+      <ul>
+        <li>แตะเลือกอะตอม แล้วกด <b>ประจุ +</b> (ดึงอิเล็กตรอนออก) หรือ <b>ประจุ −</b> (เติมอิเล็กตรอน) เช่น Na → Na⁺, Cl → Cl⁻</li>
+        <li>สร้างไอออนหลายอะตอมได้ เช่น SO₄ แล้วกดประจุ − สองครั้ง ได้ SO₄²⁻ (ระบบจัดประจุฟอร์มอลบนอะตอมให้เอง แสดงเป็นป้ายวงกลม +/− บนอะตอม)</li>
+        <li>วางไอออนบวกและไอออนลบไว้ใกล้กัน (เส้นประสีม่วง) ระบบจะบอกชื่อเกลือ เช่น NH₄⁺ + Cl⁻ → NH₄Cl</li>
+        <li>โมเลกุลเช่น O₃, CO, HNO₃ ได้ประจุฟอร์มอลอัตโนมัติ ส่วน NO, NO₂ เป็นอนุมูลอิสระ</li>
       </ul>
       <h3>โหมดการแสดงผล</h3>
       <ul>
@@ -150,6 +176,25 @@ const STRINGS = {
     broke: 'Bond broken',
     recycled: 'Recycled',
     embedNote: 'This page runs in 3D mode (mouse/touch). AR, VR and camera modes need the project hosted over HTTPS, e.g. on GitHub Pages.',
+    chargePlus: 'Charge +',
+    chargeMinus: 'Charge −',
+    chargePlusTitle: 'Remove one electron (charge +1)',
+    chargeMinusTitle: 'Add one electron (charge −1)',
+    tryCharge: (q) => `try an ion with charge ${q > 0 ? '+' : '−'}${Math.abs(q)}`,
+    overValence: 'too many bonds',
+    radicalNote: 'Radical: has an unpaired electron',
+    impossibleIon: 'this ion is not stable',
+    ion: 'ion',
+    netCharge: 'Net charge',
+    ions: 'Ions',
+    formalCharges: 'Formal charges',
+    hint: 'Hint',
+    hintCharge: (q) => `${q > 0 ? 'Remove' : 'Add'} ${Math.abs(q)} electron${Math.abs(q) > 1 ? 's' : ''} (charge ${q > 0 ? '+' : '−'}${Math.abs(q)}) to complete it — press "Charge ${q > 0 ? '+' : '−'}"`,
+    lostElectron: (f) => `Removed one electron → ${f}`,
+    gainedElectron: (f) => `Added one electron → ${f}`,
+    chargeLimit: 'Charge limit reached (±3)',
+    selectAtomFirst: 'Tap an atom first, then press a charge button',
+    saltFormed: (n) => `🧂 The ions form ${n}`,
     detachHint: 'Long-press (or Shift+drag) an atom to pull it out • double-tap to detach it',
     helpBody: `
       <h3>Build molecules</h3>
@@ -165,6 +210,13 @@ const STRINGS = {
         <li>Long-press / Shift+drag (or grab two atoms with two hands in VR) and pull until the bond turns orange, then release to break it</li>
         <li>Double-tap an atom to detach it</li>
         <li>Drop on the recycler to delete</li>
+      </ul>
+      <h3>Charges, ions and salts</h3>
+      <ul>
+        <li>Tap an atom, then press <b>Charge +</b> (remove an electron) or <b>Charge −</b> (add an electron), e.g. Na → Na⁺, Cl → Cl⁻</li>
+        <li>Polyatomic ions work too: build SO₄ and press Charge − twice for SO₄²⁻ (formal charges are placed automatically and shown as +/− badges)</li>
+        <li>Place positive and negative ions close together (purple dashed line) and the salt is named, e.g. NH₄⁺ + Cl⁻ → NH₄Cl</li>
+        <li>Molecules such as O₃, CO and HNO₃ get formal charges automatically; NO and NO₂ are radicals</li>
       </ul>
       <h3>Modes</h3>
       <ul>
