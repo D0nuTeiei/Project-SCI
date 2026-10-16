@@ -18,6 +18,8 @@ const CO2_DOUBLE = 799;
 
 /** พลังงานพันธะ (kJ/mol) หรือ null ถ้าไม่มีข้อมูล — พันธะเรโซแนนซ์ใช้ค่าเฉลี่ยถ่วงน้ำหนัก */
 export function bondEnergy(bond) {
+  // พันธะโคออร์ดิเนตของสารเชิงซ้อน และพันธะสะพาน B–H–B ไม่มีค่าเฉลี่ยในตาราง
+  if (bond.coord || bond.bridge) return null;
   const [s1, s2] = [bond.a.el.symbol, bond.b.el.symbol].sort();
   const order = bond.resonance ?? bond.order;
   const lo = Math.floor(order);

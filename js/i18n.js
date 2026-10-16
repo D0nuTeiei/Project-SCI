@@ -83,7 +83,7 @@ const STRINGS = {
     hintCharge: (q) => `ถ้า${q > 0 ? 'ดึงอิเล็กตรอนออก' : 'เติมอิเล็กตรอน'} ${Math.abs(q)} ตัว (ประจุ ${q > 0 ? '+' : '−'}${Math.abs(q)}) จะครบ — กดปุ่ม "ประจุ ${q > 0 ? '+' : '−'}"`,
     lostElectron: (f) => `ดึงอิเล็กตรอนออก 1 ตัว → ${f}`,
     gainedElectron: (f) => `เติมอิเล็กตรอน 1 ตัว → ${f}`,
-    chargeLimit: 'ประจุถึงขีดจำกัดแล้ว (±3)',
+    chargeLimit: 'ประจุถึงขีดจำกัดแล้ว (±4)',
     selectAtomFirst: 'แตะเลือกอะตอมก่อน แล้วค่อยกดปุ่มประจุ',
     saltFormed: (n) => `🧂 ไอออนรวมกันเป็น ${n}`,
     breakCost: (e) => `ต้องใช้พลังงาน ${e} kJ/mol เพื่อสลายพันธะ`,
@@ -128,6 +128,36 @@ const STRINGS = {
     mirror: '🪞 สร้างภาพในกระจก',
     mirrorDone: 'สร้างภาพในกระจกแล้ว — ลองหมุนดู จะซ้อนทับกันไม่ได้ (R ↔ S)',
     flipped: (x) => `สลับเป็น ${x} แล้ว`,
+    needLigands: (n) => `เติมลิแกนด์อีก ${n} ตัว`,
+    badOx: (ion) => `${ion} ไม่ใช่เลขออกซิเดชันที่พบในสารเชิงซ้อน`,
+    complexRow: 'สารประกอบเชิงซ้อน',
+    complexSummary: (ion, d, ligs, cn) => `ไอออนกลาง ${ion} (d${d}) · ลิแกนด์ ${ligs} · เลขโคออร์ดิเนชัน ${cn}`,
+    ligandCheck: 'ลิแกนด์บางตัวยังไม่ครบเวเลนซ์ (ลิแกนด์ต้องเป็นโมเลกุลหรือไอออนที่สมบูรณ์และมีคู่อิเล็กตรอนโดดเดี่ยว)',
+    coordBondRow: 'พันธะโคออร์ดิเนต',
+    coordBondNote: 'ลิแกนด์ (เบสลิวอิส) ให้คู่อิเล็กตรอนโดดเดี่ยวแก่ไอออนโลหะ (กรดลิวอิส) — ลูกศรสีเขียวน้ำทะเลชี้ไปที่โลหะ',
+    bondsCoord: (n) => `โคออร์ดิเนต ${n}`,
+    bondsBridge: (n) => `สะพาน B–H–B ${n}`,
+    geomNote: {
+      square: 'สี่เหลี่ยมแบนราบพบในไอออน d⁸ (Pd²⁺, Pt²⁺ และ Ni²⁺ กับ CN⁻) และ Cu²⁺ (d⁹)',
+      tetra: 'ทรงสี่หน้าพบในไอออน d¹⁰ (Zn²⁺, Ni⁰) และกับลิแกนด์ขนาดใหญ่ เช่น Cl⁻',
+      octa: 'ทรงแปดหน้าเป็นรูปร่างที่พบบ่อยที่สุดของเลขโคออร์ดิเนชัน 6',
+      linear: 'เส้นตรงพบในไอออน d¹⁰ ที่มีเลขโคออร์ดิเนชัน 2 เช่น Ag⁺, Au⁺',
+      tbp: 'เลขโคออร์ดิเนชัน 5 พบน้อย เช่น Fe(CO)₅',
+    },
+    geomVsepr: 'VSEPR ใช้ทำนายรูปร่างสารเชิงซ้อนของโลหะทรานซิชันไม่ได้ (อิเล็กตรอน d ไม่ผลักแบบคู่โดดเดี่ยว) ต้องใช้ทฤษฎีสนามผลึก ซึ่งเกินหลักสูตร ม.ปลาย',
+    complexIsomerNote: 'สลับได้ต่อเมื่อสลายและสร้างพันธะโคออร์ดิเนตใหม่',
+    bridgeRow: 'พันธะ 3 ศูนย์กลาง',
+    bridgeNote: (n) => `H สะพาน ${n} อะตอม: อิเล็กตรอน 2 ตัวยึด B–H–B ทั้งสามอะตอมไว้ด้วยกัน (B มีอิเล็กตรอนไม่พอจะสร้างพันธะคู่อิเล็กตรอนได้ครบทุกพันธะ) มุม B–H–B ~83°`,
+    bridgeHint: 'ต่อ H ของอีกฝั่งเข้ากับ B ให้ครบ 2 สะพาน',
+    hyperRow: 'เวเลนซ์ขยาย?',
+    hyperNoteO: (x) => `แบบเรียนวาด ${x} มีพันธะคู่และอิเล็กตรอนรอบตัวเกิน 8 แต่งานคำนวณเคมีควอนตัมสมัยใหม่พบว่าออร์บิทัล d แทบไม่มีส่วนร่วม โครงสร้างที่ใกล้ความจริงกว่าคือแบบแยกประจุ (${x} มีประจุบวก O มีประจุลบ ต่อกันด้วยพันธะเดี่ยวที่มีขั้วสูง) พันธะสั้นเพราะแรงดึงดูดไฟฟ้า ไม่ใช่เพราะเป็นพันธะคู่`,
+    hyperNoteX: (x) => `แบบเรียนให้ ${x} มีอิเล็กตรอนรอบตัวเกิน 8 แต่คำอธิบายสมัยใหม่ใช้พันธะ 3 ศูนย์กลาง 4 อิเล็กตรอน (เช่น F–${x}–F) ร่วมกับพันธะที่มีขั้วสูง ไม่ได้ใช้ออร์บิทัล d`,
+    octetRow: 'แบบแยกประจุ',
+    octetNote: 'ทุกอะตอมมีอิเล็กตรอนไม่เกิน 8 ตามกฎออกเตต แลกกับประจุฟอร์มอลที่มากขึ้น งานคำนวณสมัยใหม่สนับสนุนแบบนี้ ส่วนแบบเรียนเลือกแบบที่ประจุฟอร์มอลน้อยที่สุด',
+    octetOn: '⚡ ดูแบบแยกประจุ (กฎออกเตต)',
+    octetOff: '📘 ดูแบบตำราเรียน (เวเลนซ์ขยาย)',
+    octetOnToast: 'แบบแยกประจุ: พันธะเดี่ยวทั้งหมด อะตอมกลางมีประจุบวก',
+    octetOffToast: 'กลับไปแบบตำราเรียน (ประจุฟอร์มอลน้อยที่สุด)',
     detachHint: 'กดค้าง (หรือ Shift+ลาก) ที่อะตอมเพื่อดึงออกจากโมเลกุล • แตะสองครั้งเพื่อแยกอะตอม',
     helpBody: `
       <h3>สร้างโมเลกุล</h3>
@@ -158,6 +188,13 @@ const STRINGS = {
         <li><b>สภาพขั้ว</b>: ขึ้นกับรูปร่างและคู่อิเล็กตรอนโดดเดี่ยว เช่น O₃ เป็นธาตุเดียวกันแต่มีขั้ว</li>
         <li><b>เรโซแนนซ์</b>: พันธะที่มีเส้นทึบ + เส้นประ ยาวเท่ากันทุกพันธะ ประจุกระจายเป็นเศษส่วน (เช่น ⅔−)</li>
         <li><b>พลังงานพันธะ</b>: การเกิดพันธะปล่อยพลังงาน การสลายพันธะต้องใช้พลังงาน (ดูตัวเลขตอนดึงพันธะจนเป็นสีส้ม)</li>
+      </ul>
+      <h3>เนื้อหาเสริม (เกินหลักสูตร ม.ปลาย)</h3>
+      <ul>
+        <li><b>สารประกอบเชิงซ้อน</b>: ต่อ NH₃, H₂O, C≡N, Cl หรือ C≡O เข้ากับโลหะทรานซิชัน แล้วตั้งประจุรวมให้ถูก เช่น Cu + NH₃ 4 โมเลกุล ประจุ +2 → [Cu(NH₃)₄]²⁺ (ลูกศรสีเขียวน้ำทะเล = พันธะโคออร์ดิเนต) ระบบหาประจุของลิแกนด์และเลขออกซิเดชันของโลหะให้เอง</li>
+        <li><b>ไอโซเมอร์ของสารเชิงซ้อน</b>: [PtCl₂(NH₃)₂] แบบ cis คือยารักษามะเร็งซิสพลาทิน ลองกดสลับ cis ↔ trans</li>
+        <li><b>พันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน</b>: สร้าง BH₃ สองโมเลกุล แล้วนำ H ของโมเลกุลหนึ่งไปแตะ B ของอีกโมเลกุล (ทำทั้งสองฝั่ง) ได้ไดโบเรน B₂H₆ ที่มี H สะพาน</li>
+        <li><b>เวเลนซ์ขยาย</b>: SO₄²⁻, PO₄³⁻, SO₂ มีปุ่มดูแบบแยกประจุตามกฎออกเตต ซึ่งงานคำนวณสมัยใหม่สนับสนุน</li>
       </ul>
       <h3>โหมดการแสดงผล</h3>
       <ul>
@@ -248,7 +285,7 @@ const STRINGS = {
     hintCharge: (q) => `${q > 0 ? 'Remove' : 'Add'} ${Math.abs(q)} electron${Math.abs(q) > 1 ? 's' : ''} (charge ${q > 0 ? '+' : '−'}${Math.abs(q)}) to complete it — press "Charge ${q > 0 ? '+' : '−'}"`,
     lostElectron: (f) => `Removed one electron → ${f}`,
     gainedElectron: (f) => `Added one electron → ${f}`,
-    chargeLimit: 'Charge limit reached (±3)',
+    chargeLimit: 'Charge limit reached (±4)',
     selectAtomFirst: 'Tap an atom first, then press a charge button',
     saltFormed: (n) => `🧂 The ions form ${n}`,
     breakCost: (e) => `Breaking this bond needs ${e} kJ/mol`,
@@ -293,6 +330,36 @@ const STRINGS = {
     mirror: '🪞 Make mirror image',
     mirrorDone: 'Mirror image created — rotate it: they cannot be superimposed (R ↔ S)',
     flipped: (x) => `Switched to ${x}`,
+    needLigands: (n) => `add ${n} more ligand${n > 1 ? 's' : ''}`,
+    badOx: (ion) => `${ion} is not a usual oxidation state in complexes`,
+    complexRow: 'Coordination complex',
+    complexSummary: (ion, d, ligs, cn) => `central ion ${ion} (d${d}) · ligands ${ligs} · coordination number ${cn}`,
+    ligandCheck: 'Some ligands are incomplete (a ligand must be a complete molecule or ion with a lone pair)',
+    coordBondRow: 'Coordinate bonds',
+    coordBondNote: 'each ligand (Lewis base) donates a lone pair to the metal ion (Lewis acid) — the teal arrows point to the metal',
+    bondsCoord: (n) => `coordinate ${n}`,
+    bondsBridge: (n) => `B–H–B bridges ${n}`,
+    geomNote: {
+      square: 'Square planar is typical of d⁸ ions (Pd²⁺, Pt²⁺, Ni²⁺ with CN⁻) and of Cu²⁺ (d⁹)',
+      tetra: 'Tetrahedral is typical of d¹⁰ ions (Zn²⁺, Ni⁰) and of bulky ligands such as Cl⁻',
+      octa: 'Octahedral is by far the most common shape for coordination number 6',
+      linear: 'Linear is typical of d¹⁰ ions with coordination number 2, e.g. Ag⁺, Au⁺',
+      tbp: 'Coordination number 5 is uncommon, e.g. Fe(CO)₅',
+    },
+    geomVsepr: 'VSEPR cannot predict the shapes of transition-metal complexes (d electrons do not act like lone pairs); crystal field theory is needed, which is beyond high-school level',
+    complexIsomerNote: 'it can only change by breaking and re-forming coordinate bonds',
+    bridgeRow: 'Three-centre bonds',
+    bridgeNote: (n) => `${n} bridging H atoms: one electron pair holds all three atoms of B–H–B together (boron has too few electrons for ordinary two-electron bonds everywhere); B–H–B angle ~83°`,
+    bridgeHint: 'join the other H to B to make both bridges',
+    hyperRow: 'Expanded octet?',
+    hyperNoteO: (x) => `Textbooks draw ${x} with double bonds and more than 8 electrons, but modern quantum-chemical studies find almost no d-orbital involvement. A charge-separated structure (${x} positive, each O negative, joined by highly polar single bonds) is closer to reality; the bonds are short because of electrostatic attraction, not because they are double bonds`,
+    hyperNoteX: (x) => `Textbooks give ${x} more than 8 electrons, but the modern explanation uses three-centre four-electron bonds (e.g. F–${x}–F) plus highly polar bonding, without d orbitals`,
+    octetRow: 'Charge-separated',
+    octetNote: 'every atom has at most 8 electrons (octet rule) at the cost of larger formal charges. Modern calculations support this picture; textbooks choose the structure with the smallest formal charges',
+    octetOn: '⚡ Show charge-separated (octet rule)',
+    octetOff: '📘 Show textbook (expanded octet)',
+    octetOnToast: 'Charge-separated: all single bonds, positive central atom',
+    octetOffToast: 'Back to the textbook structure (smallest formal charges)',
     detachHint: 'Long-press (or Shift+drag) an atom to pull it out • double-tap to detach it',
     helpBody: `
       <h3>Build molecules</h3>
@@ -323,6 +390,13 @@ const STRINGS = {
         <li><b>Polarity</b> depends on shape and lone pairs: O₃ is made of one element yet is polar</li>
         <li><b>Resonance</b>: bonds drawn solid + dashed are all identical; charges spread as fractions (e.g. ⅔−)</li>
         <li><b>Bond energy</b>: forming bonds releases energy; breaking bonds needs energy (see the number while stretching a bond orange)</li>
+      </ul>
+      <h3>Extension topics (beyond high school)</h3>
+      <ul>
+        <li><b>Coordination complexes</b>: attach NH₃, H₂O, C≡N, Cl or C≡O to a transition metal and set the overall charge, e.g. Cu + four NH₃ with charge +2 → [Cu(NH₃)₄]²⁺ (teal arrows = coordinate bonds). Ligand charges and the metal oxidation state are worked out automatically</li>
+        <li><b>Isomers of complexes</b>: cis-[PtCl₂(NH₃)₂] is the anticancer drug cisplatin — try flipping cis ↔ trans</li>
+        <li><b>Three-centre two-electron bonds</b>: build two BH₃ molecules and touch an H of one to the B of the other (both ways) to make diborane B₂H₆ with bridging H atoms</li>
+        <li><b>Expanded octets</b>: SO₄²⁻, PO₄³⁻ and SO₂ have a button to show the charge-separated octet structure supported by modern calculations</li>
       </ul>
       <h3>Modes</h3>
       <ul>

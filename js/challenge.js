@@ -6,6 +6,7 @@ import { getLang } from './i18n.js';
 const LIST = [
   'H2', 'H2O', 'O2', 'CO2', 'NH3', 'CH4', 'HCl', 'N2', 'C2H4', 'CH3OH', 'HCN', 'C2H5OH', 'NaCl', 'H2O2', 'CH3COOH', 'C6H6',
   'Na+1', 'Cl-1', 'OH-1', 'NH4+1', 'O3', 'CO', 'NO3-1', 'CO3-2', 'SO4-2', 'NH4Cl', 'CaCO3', 'C6H12O6',
+  'B2H6', '[Cu(NH3)4]+2', '[Ag(NH3)2]+1', '[Fe(CN)6]-3',
 ];
 
 export class Challenge {

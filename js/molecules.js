@@ -279,6 +279,33 @@ MOLECULES.push(
   { f: 'Na2S2O3', th: 'โซเดียมไทโอซัลเฟต (ไฮโป)', en: 'Sodium thiosulfate', dTh: 'ใช้กำจัดคลอรีนในน้ำเลี้ยงปลา', dEn: 'Removes chlorine from aquarium water.' },
 );
 
+// ---------- เกินหลักสูตร ม.ปลาย: พันธะ 3 ศูนย์กลาง และสารประกอบเชิงซ้อนของโลหะทรานซิชัน ----------
+MOLECULES.push(
+  { f: 'BH3', th: 'โบเรน (BH₃)', en: 'Borane', dTh: 'B มีอิเล็กตรอนรอบตัวแค่ 6 จึงไม่เสถียร สองโมเลกุลรวมกันเป็นไดโบเรน B₂H₆ — ลองนำ H ของโมเลกุลหนึ่งไปแตะ B ของอีกโมเลกุล', dEn: 'B has only six electrons, so BH₃ is unstable and dimerises to diborane B₂H₆. Try touching an H of one molecule to the B of another.' },
+  { f: 'B2H6', th: 'ไดโบเรน', en: 'Diborane', dTh: 'มี H สะพาน 2 อะตอม แต่ละตัวยึด B สองอะตอมด้วยอิเล็กตรอนเพียง 2 ตัว (พันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน) เพราะ B ขาดอิเล็กตรอน และไม่มีพันธะ B–B', dEn: 'Two bridging H atoms each hold two B atoms with only two electrons (three-centre two-electron bonds), because boron is electron-deficient. There is no B–B bond.' },
+
+  { f: '[Cu(NH3)4]', q: 2, th: 'เตตระแอมมีนคอปเปอร์(II) ไอออน', en: 'Tetraamminecopper(II) ion', dTh: 'สีน้ำเงินเข้ม เกิดเมื่อเติมแอมโมเนียลงในสารละลาย Cu²⁺ (ใช้ทดสอบ Cu²⁺) N ของ NH₃ ให้คู่อิเล็กตรอนโดดเดี่ยวแก่ Cu²⁺ รูปร่างสี่เหลี่ยมแบนราบ', dEn: 'Deep blue; forms when ammonia is added to Cu²⁺ solution (a test for Cu²⁺). Each NH₃ donates its lone pair to Cu²⁺. Square planar.' },
+  { f: '[Cu(H2O)6]', q: 2, th: 'เฮกซะแอควาคอปเปอร์(II) ไอออน', en: 'Hexaaquacopper(II) ion', dTh: 'สีฟ้าของสารละลายจุนสี เพราะ Cu²⁺ ในน้ำมีโมเลกุลน้ำล้อมรอบ 6 โมเลกุล (ทรงแปดหน้าที่ยืดออกตามแกนหนึ่ง)', dEn: 'The blue of copper sulfate solution: Cu²⁺ in water is surrounded by six water molecules (an elongated octahedron).' },
+  { f: '[CuCl4]', q: -2, th: 'เตตระคลอโรคิวเพรต(II) ไอออน', en: 'Tetrachlorocuprate(II) ion', dTh: 'สีเหลืองอมเขียว เกิดเมื่อเติม HCl เข้มข้นลงในสารละลาย Cu²⁺', dEn: 'Yellow-green; forms when concentrated HCl is added to Cu²⁺ solution.' },
+  { f: '[Ag(NH3)2]', q: 1, th: 'ไดแอมมีนซิลเวอร์(I) ไอออน', en: 'Diamminesilver(I) ion', dTh: 'อยู่ในรีเอเจนต์ทอลเลนส์ ซึ่งใช้ทดสอบแอลดีไฮด์ (ได้กระจกเงิน) รูปร่างเส้นตรง', dEn: 'The active species in Tollens’ reagent (silver-mirror test for aldehydes). Linear.' },
+  { f: '[Zn(NH3)4]', q: 2, th: 'เตตระแอมมีนซิงก์(II) ไอออน', en: 'Tetraamminezinc(II) ion', dTh: 'ไม่มีสี เพราะ Zn²⁺ มีอิเล็กตรอน d ครบ 10 ตัว รูปร่างทรงสี่หน้า', dEn: 'Colourless because Zn²⁺ has a full d¹⁰ shell. Tetrahedral.' },
+  { f: '[Ni(CN)4]', q: -2, th: 'เตตระไซยาโนนิกเกเลต(II) ไอออน', en: 'Tetracyanonickelate(II) ion', dTh: 'Ni²⁺ (d⁸) กับลิแกนด์สนามแรง CN⁻ จึงเป็นสี่เหลี่ยมแบนราบ', dEn: 'Ni²⁺ (d⁸) with the strong-field ligand CN⁻ is square planar.' },
+  { f: 'Ni(CO)4', th: 'นิกเกิลเตตระคาร์บอนิล', en: 'Nickel tetracarbonyl', dTh: 'ของเหลวพิษร้ายแรง Ni มีเลขออกซิเดชัน 0 ใช้ทำนิกเกิลให้บริสุทธิ์ (กระบวนการมอนด์) รูปร่างทรงสี่หน้า', dEn: 'A highly toxic liquid with Ni in oxidation state 0; used to purify nickel (Mond process). Tetrahedral.' },
+  { f: 'Fe(CO)5', th: 'เหล็กเพนตะคาร์บอนิล', en: 'Iron pentacarbonyl', dTh: 'ของเหลวสีเหลือง Fe มีเลขออกซิเดชัน 0 เลขโคออร์ดิเนชัน 5 (พีระมิดคู่ฐานสามเหลี่ยม)', dEn: 'A yellow liquid with Fe(0); coordination number 5 (trigonal bipyramidal).' },
+  { f: 'Cr(CO)6', th: 'โครเมียมเฮกซะคาร์บอนิล', en: 'Chromium hexacarbonyl', dTh: 'ผลึกไม่มีสี Cr มีเลขออกซิเดชัน 0 รูปร่างทรงแปดหน้า', dEn: 'Colourless crystals with Cr(0); octahedral.' },
+  { f: '[Fe(CN)6]', q: -3, th: 'เฮกซะไซยาโนเฟอร์เรต(III) ไอออน (เฟอร์ริไซยาไนด์)', en: 'Hexacyanoferrate(III) ion (ferricyanide)', dTh: 'ทรงแปดหน้า เกลือโพแทสเซียมเป็นผลึกสีแดง ใช้ทำพิมพ์เขียว — CN⁻ ไม่ปล่อยไซยาไนด์อิสระเพราะยึดกับ Fe แน่นมาก', dEn: 'Octahedral; its potassium salt forms red crystals used for blueprints. The CN⁻ is held tightly, so it is far less toxic than free cyanide.' },
+  { f: '[Fe(CN)6]', q: -4, th: 'เฮกซะไซยาโนเฟอร์เรต(II) ไอออน (เฟอร์โรไซยาไนด์)', en: 'Hexacyanoferrate(II) ion (ferrocyanide)', dTh: 'ทำปฏิกิริยากับ Fe³⁺ ได้สีน้ำเงินปรัสเซียน', dEn: 'Gives Prussian blue with Fe³⁺.' },
+  { f: '[Fe(H2O)6]', q: 3, th: 'เฮกซะแอควาไอร์ออน(III) ไอออน', en: 'Hexaaquairon(III) ion', dTh: 'Fe³⁺ ในน้ำ เป็นกรดอ่อน (ให้ H⁺ ได้) สารละลายจึงเป็นสีเหลืองน้ำตาล', dEn: 'Fe³⁺ in water; it is weakly acidic, so solutions look yellow-brown.' },
+  { f: '[Fe(H2O)6]', q: 2, th: 'เฮกซะแอควาไอร์ออน(II) ไอออน', en: 'Hexaaquairon(II) ion', dTh: 'Fe²⁺ ในน้ำ สีเขียวอ่อน', dEn: 'Fe²⁺ in water; pale green.' },
+  { f: '[FeCl4]', q: -1, th: 'เตตระคลอโรเฟอร์เรต(III) ไอออน', en: 'Tetrachloroferrate(III) ion', dTh: 'สีเหลือง รูปร่างทรงสี่หน้า', dEn: 'Yellow and tetrahedral.' },
+  { f: '[Co(H2O)6]', q: 2, th: 'เฮกซะแอควาโคบอลต์(II) ไอออน', en: 'Hexaaquacobalt(II) ion', dTh: 'สีชมพู เมื่อมี Cl⁻ มากจะเปลี่ยนเป็น [CoCl₄]²⁻ สีน้ำเงิน (หลักการของซิลิกาเจลบอกความชื้น)', dEn: 'Pink; with excess Cl⁻ it turns into blue [CoCl₄]²⁻ (the principle of humidity-indicator silica gel).' },
+  { f: '[CoCl4]', q: -2, th: 'เตตระคลอโรโคบอลเตต(II) ไอออน', en: 'Tetrachlorocobaltate(II) ion', dTh: 'สีน้ำเงิน รูปร่างทรงสี่หน้า', dEn: 'Blue and tetrahedral.' },
+  { f: '[Co(NH3)6]', q: 3, th: 'เฮกซะแอมมีนโคบอลต์(III) ไอออน', en: 'Hexaamminecobalt(III) ion', dTh: 'สีเหลืองส้ม เป็นสารที่แวร์เนอร์ใช้วางรากฐานทฤษฎีโคออร์ดิเนชัน (รางวัลโนเบล ค.ศ. 1913)', dEn: 'Yellow-orange; one of the compounds Werner used to found coordination theory (Nobel Prize 1913).' },
+  { f: '[CoCl2(NH3)4]', q: 1, th: 'เตตระแอมมีนไดคลอโรโคบอลต์(III) ไอออน', en: 'Tetraamminedichlorocobalt(III) ion', dTh: 'มีไอโซเมอร์ 2 แบบ: cis (สีม่วง) และ trans (สีเขียว) ซึ่งแวร์เนอร์ใช้เป็นหลักฐานว่าสารเชิงซ้อนเป็นทรงแปดหน้า', dEn: 'Exists as cis (violet) and trans (green) isomers, which Werner used as evidence that complexes are octahedral.' },
+  { f: '[PtCl2(NH3)2]', th: 'ไดแอมมีนไดคลอโรแพลทินัม(II)', en: 'Diamminedichloroplatinum(II)', dTh: 'สี่เหลี่ยมแบนราบ แบบ cis คือยาเคมีบำบัด "ซิสพลาทิน" ส่วนแบบ trans ไม่มีฤทธิ์ต้านมะเร็ง ลองกดสลับ cis ↔ trans', dEn: 'Square planar. The cis isomer is the anticancer drug cisplatin; the trans isomer is inactive. Try flipping cis ↔ trans.' },
+  { f: '[Cr(H2O)6]', q: 3, th: 'เฮกซะแอควาโครเมียม(III) ไอออน', en: 'Hexaaquachromium(III) ion', dTh: 'สีม่วงอมน้ำเงิน รูปร่างทรงแปดหน้า', dEn: 'Blue-violet and octahedral.' },
+);
+
 const SUPER = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
 /** ประจุแบบตัวยก เช่น 2- → ²⁻ */
 export function chargeSuffix(q) {
@@ -329,6 +356,7 @@ const BOILING = {
   C2H6: -89, C2H4: -104, C2H2: '-84*', C3H8: -42, C4H10: -1, isobutane: -12, C5H12: 36, 'CH3CH(CH3)CH2CH3': 28,
   'C(CH3)4': 10, C6H14: 69, C8H18: 126, C3H6: -48, C6H12: 81, C6H6: 80, C6H5CH3: 111, C3H7OH: 97,
   '(CH3)2CHOH': 82, HOCH2CH2OH: 197, 'C3H5(OH)3': 290, C6H5OH: 182, CH3COOC2H5: 77, CH3COOCH3: 57, CH3NH2: -6,
+  B2H6: -93, 'Ni(CO)4': 43, 'Fe(CO)5': 103,
   NaCl: 1465, KCl: 1420, MgO: 3600, CaO: 2850, LiF: 1676, NaF: 1704,
 };
 

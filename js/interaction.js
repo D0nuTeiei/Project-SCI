@@ -343,12 +343,13 @@ export class Interaction {
     let best = null;
     let bestD = SNAP;
     for (const a of heldSet) {
-      if (a.removed || !a.hasFreeSlot()) continue;
+      // H ที่ต่อกับ B แล้วยังเป็น H สะพานได้ (B–H–B) จึงไม่ข้าม H
+      if (a.removed || (!a.hasFreeSlot() && a.el.symbol !== 'H')) continue;
       // ห้ามต่อกับเพื่อนบ้านลำดับที่ 1–2 (กันวงสามเหลี่ยมโดยไม่ตั้งใจตอนดึงอะตอม)
       const close = new Set([a]);
       for (const n of a.neighbors) { close.add(n); n.neighbors.forEach((m) => close.add(m)); }
       for (const b of sys.atoms) {
-        if (heldSet.has(b) || close.has(b) || !b.hasFreeSlot()) continue;
+        if (heldSet.has(b) || close.has(b) || !sys.canBond(a, b)) continue;
         const d = a.pos.distanceTo(b.pos) - atomRadius(a.el) - atomRadius(b.el);
         if (d < bestD) { bestD = d; best = { a, b }; }
       }

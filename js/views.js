@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { atomRadius, isOverstretched } from './physics.js';
 import { analyze, bondTypeOf, suggestCharge, ionClusters, findHydrogenBonds, applyExperimentalGeometry } from './chemistry.js';
-import { findStereocenters, doubleBondStereo } from './stereo.js';
+import { findStereocenters, doubleBondStereo, complexStereo } from './stereo.js';
 import { bondEnergy } from './energy.js';
 import { BY_SYMBOL } from './elements.js';
 import { chargeSuffix } from './molecules.js';
@@ -14,6 +14,7 @@ const SPHERE = new THREE.SphereGeometry(1, 32, 20);
 const CYL = new THREE.CylinderGeometry(1, 1, 1, 14, 1);
 const RING = new THREE.TorusGeometry(1.4, 0.08, 8, 48);
 const LP_GEO = new THREE.SphereGeometry(1, 12, 8);
+const CONE = new THREE.ConeGeometry(1, 1, 14);
 
 const RING_COLORS = { hover: 0xffffff, grab: 0x4dff9a, target: 0x4dff9a, break: 0xff8a2a, recycle: 0xff4d4d };
 const ringMats = Object.fromEntries(Object.entries(RING_COLORS).map(([k, c]) => [k, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.9, depthTest: false })]));
@@ -22,6 +23,9 @@ const bondMats = {
   ionic: new THREE.MeshStandardMaterial({ color: 0xb28dff, roughness: 0.35, metalness: 0.1 }),
   stretch: new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.35, emissive: 0x552200 }),
   metallic: new THREE.MeshStandardMaterial({ color: 0x9fd4ff, roughness: 0.2, metalness: 0.7 }),
+  // พันธะโคออร์ดิเนต (ลิแกนด์ → โลหะ) และพันธะสะพาน 3 ศูนย์กลาง (B–H–B)
+  coord: new THREE.MeshStandardMaterial({ color: 0x3fd6c0, roughness: 0.35, metalness: 0.1 }),
+  bridge: new THREE.MeshStandardMaterial({ color: 0xff9ad8, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.85 }),
   preview: new THREE.MeshBasicMaterial({ color: 0x4dff9a, transparent: true, opacity: 0.55 }),
 };
 const hbMat = new THREE.MeshBasicMaterial({ color: 0xffe066, toneMapped: false });
@@ -199,7 +203,9 @@ export function labelLines(info, stereo = null) {
   }
   if (info.metalOnly) return [{ text: info.pretty, size: 46 }, { text: t('metallicNote'), size: 28, color: '#9fd4ff' }];
   if (info.complete) return [{ text: pre + info.pretty, size: 46 }, { text: t('completeUnknown'), size: 28, color: '#9fe8b0' }];
-  const why = info.hint ? t('tryCharge', info.hint) : info.missing > 0 ? t('needMore', info.missing) : t('overValence');
+  const cx = info.complex;
+  const why = cx?.needLigands ? t('needLigands', cx.needLigands) : info.bridgeCount ? t('bridgeHint') : info.hint ? t('tryCharge', info.hint)
+    : cx && !cx.oxOk ? t('badOx', cx.ion) : info.missing > 0 ? t('needMore', info.missing) : t('overValence');
   return [{ text: info.pretty, size: 46 }, { text: `${t('incomplete')} · ${why}`, size: 28, color: '#ffcf8a' }];
 }
 
@@ -327,7 +333,7 @@ export class MoleculeViews {
   updateStereo() {
     const labels = new Map();
     for (const e of this.analyses) {
-      const stereo = e.comp.atoms.length >= 4 ? { centers: findStereocenters(e.comp), dbs: doubleBondStereo(e.comp) } : null;
+      const stereo = e.comp.atoms.length >= 4 ? { centers: findStereocenters(e.comp), dbs: [...doubleBondStereo(e.comp), ...complexStereo(e.comp)] } : null;
       const key = stereo ? stereo.centers.map((c) => c.atom.id + c.label).join() + '|' + stereo.dbs.map((d) => d.ez + d.cisTrans).join() : '';
       if (key !== e.stereoKey) {
         e.stereoKey = key;
@@ -404,8 +410,8 @@ export class MoleculeViews {
         v.ring.material = ringMats[ring];
         v.ring.quaternion.copy(state.ringQuat);
       }
-      // อิเล็กตรอนคู่โดดเดี่ยว
-      const showLP = state.showLonePairs && atom.lpDirs.length > 0;
+      // อิเล็กตรอนคู่โดดเดี่ยว (ไม่แสดงคู่เสมือนที่ใช้จัดรูปสี่เหลี่ยมแบนราบของไอออนโลหะ)
+      const showLP = state.showLonePairs && atom.lpDirs.length > 0 && !atom.coord;
       v.lp.visible = showLP;
       if (showLP) {
         while (v.lp.children.length < atom.lpDirs.length * 2) {
@@ -459,6 +465,27 @@ export class MoleculeViews {
         // พันธะไอออนิก = แรงดึงดูดไฟฟ้าระหว่างไอออน (เส้นประ) ไม่ใช่แท่งพันธะแบบใช้อิเล็กตรอนร่วมกัน
         v.rods.forEach((r) => { r.visible = false; });
         v.placeDashes(_a, _b, 0.003, bondMats.ionic);
+        continue;
+      }
+      if (v.arrow) v.arrow.visible = false;
+      if ((bond.coord || bond.bridge) && !stretched) {
+        // พันธะโคออร์ดิเนต: แท่งสีเขียวน้ำทะเล + หัวลูกศรชี้จากลิแกนด์ (ผู้ให้คู่อิเล็กตรอน) ไปยังไอออนโลหะ
+        // พันธะสะพาน B–H–B: แท่งบางสีชมพู (อิเล็กตรอน 2 ตัวใช้ร่วมกัน 3 อะตอม)
+        v.hideDashes();
+        v.rods[1].visible = false;
+        v.rods[2].visible = false;
+        placeRod(v.rods[0], _a, _b, bond.bridge ? 0.0028 : 0.0036);
+        v.rods[0].material = bond.bridge ? bondMats.bridge : bondMats.coord;
+        if (bond.coord) {
+          if (!v.arrow) { v.arrow = new THREE.Mesh(CONE, bondMats.coord); v.group.add(v.arrow); }
+          const metal = bond.other(bond.donor);
+          const tip = metal.pos.clone().lerp(bond.donor.pos, (atomRadius(metal.el) + 0.002) / (bond.donor.pos.distanceTo(metal.pos) || 1));
+          _dir.subVectors(metal.pos, bond.donor.pos).normalize();
+          v.arrow.visible = true;
+          v.arrow.position.copy(tip).addScaledVector(_dir, -0.006);
+          v.arrow.quaternion.setFromUnitVectors(_up, _dir);
+          v.arrow.scale.set(0.0072, 0.012, 0.0072);
+        }
         continue;
       }
       if (bond.resonance != null && !stretched) {

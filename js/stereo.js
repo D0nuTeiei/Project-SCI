@@ -62,7 +62,7 @@ export function rankNeighbors(center, neighbors = center.neighbors) {
 export function findStereocenters(comp) {
   const out = [];
   for (const c of comp.atoms) {
-    if (c.bonds.length !== 4 || c.bonds.some((b) => b.order !== 1)) continue;
+    if (c.bonds.length !== 4 || c.bonds.some((b) => b.order !== 1 || b.coord || b.bridge)) continue;
     const ranked = rankNeighbors(c);
     if (!ranked) continue;
     const [a, b, d] = ranked.slice(0, 3).map((n) => sub(n.pos, c.pos));
@@ -101,10 +101,40 @@ export function doubleBondStereo(comp) {
   return out;
 }
 
+const angleAt = (c, p, q) => {
+  const u = sub(p.pos, c.pos); const v = sub(q.pos, c.pos);
+  return (Math.acos(Math.max(-1, Math.min(1, dot(u, v) / Math.sqrt(dot(u, u) * dot(v, v))))) * 180) / Math.PI;
+};
+
+/**
+ * ไอโซเมอร์ cis/trans ของสารเชิงซ้อน: สี่เหลี่ยมแบนราบ MA₂B₂ (เช่น ซิสพลาทิน) และทรงแปดหน้า MA₄B₂ (เช่น [CoCl₂(NH₃)₄]⁺)
+ * cis = ลิแกนด์ B สองตัวทำมุม ~90°, trans = ~180°
+ */
+export function complexStereo(comp) {
+  const M = comp.atoms.find((a) => a.coord);
+  const c = M?.coord;
+  if (!c || !((c.cn === 4 && c.virtualLP === 2) || c.cn === 6)) return [];
+  const type = new Map();
+  for (const f of c.ligands) {
+    if (f.donors.length !== 1) return []; // ลิแกนด์หลายฟัน (เช่น en) ข้ามไป
+    const key = f.atoms.map((a) => a.el.symbol).sort().join('') + f.q;
+    if (!type.has(key)) type.set(key, []);
+    type.get(key).push(f.donors[0]);
+  }
+  if (type.size !== 2) return [];
+  const [p, q] = [...type.values()].sort((x, y) => x.length - y.length);
+  if (p.length !== 2) return [];
+  const [b1, b2] = p;
+  const cis = angleAt(M, b1, b2) < 135;
+  // ตัวที่จะสลับกับ b1: cis → ลิแกนด์ A ที่อยู่ตรงข้าม b2 (ได้ trans), trans → ลิแกนด์ A ตัวใดก็ได้ (ได้ cis)
+  const a = cis ? q.reduce((best, x) => (angleAt(M, x, b2) > angleAt(M, best, b2) ? x : best), q[0]) : q[0];
+  return [{ kind: 'complex', center: M, bond: null, ez: null, cisTrans: cis ? 'cis' : 'trans', swap: [b1, a] }];
+}
+
 /** สลับ cis ↔ trans: สลับตำแหน่งหมู่แทนที่สองหมู่บนคาร์บอนด้านหนึ่ง (ย้ายทั้งกิ่งไปด้วย) */
 export function flipDoubleBond(sys, stereoItem) {
   const [y1, y2] = stereoItem.swap;
-  const B = stereoItem.bond.a.neighbors.includes(y1) ? stereoItem.bond.a : stereoItem.bond.b;
+  const B = stereoItem.center || (stereoItem.bond.a.neighbors.includes(y1) ? stereoItem.bond.a : stereoItem.bond.b);
   const branch = (start) => {
     const seen = new Set([B, start]);
     const stack = [start];

@@ -9,6 +9,8 @@ export function atomRadius(el) {
 /** ความยาวพันธะที่แสดงผล (เมตร) — พันธะคู่/สามสั้นลงเล็กน้อยเหมือนของจริง */
 export function bondLength(bond) {
   const base = atomRadius(bond.a.el) + atomRadius(bond.b.el) + 0.035;
+  // พันธะสะพาน B–H–B ยาวกว่าพันธะ B–H ปลาย (133 pm เทียบกับ 119 pm)
+  if (bond.bridge) return base * 1.12;
   // พันธะเรโซแนนซ์ (เช่น 1.5) ยาวระหว่างพันธะเดี่ยวกับพันธะคู่
   const o = bond.resonance ?? bond.order;
   const f = o <= 2 ? 1 - 0.08 * (o - 1) : 0.92 - 0.06 * (o - 2);
@@ -114,7 +116,11 @@ function expandedOctet(center, d, lpCount) {
   const targets = [];
   let lps = [];
   const pair = (i, j, deg) => targets.push([i, j, deg * DEG]);
-  if (n === 2 && lpCount === 3) { // เส้นตรง (XeF₂)
+  if (lpCount === 0 && n <= 4 && center.coord) {
+    // ไอออนโลหะกลางของสารเชิงซ้อน: เส้นตรง / สามเหลี่ยม / ทรงสี่หน้า (แรงผลักแบบจุดอ่อนเกินเมื่อลิแกนด์มีหลายอะตอม)
+    const deg = n === 2 ? 180 : n === 3 ? 120 : 109.47;
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) pair(a, b, deg);
+  } else if (n === 2 && lpCount === 3) { // เส้นตรง (XeF₂)
     pair(0, 1, 180);
     const axis = norm3(sub3(d[0], d[1]));
     const u = perpendicular(axis);
@@ -228,7 +234,7 @@ export function relax(sys, iterations = 6) {
       }
       // กลุ่มอิเล็กตรอน ≥ 5 (เวเลนซ์ขยาย): แรงผลักแบบจุดบนทรงกลมมีค่าต่ำสุดเฉพาะที่หลายแบบ
       // จึงใช้แม่แบบ VSEPR โดยตรง (คู่โดดเดี่ยวอยู่ตำแหน่งแนวราบ / ตรงข้ามกัน)
-      if (n >= 2 && n + lps.length >= 5 && expandedOctet(center, dirs, lps.length)) continue;
+      if (n >= 2 && (n + lps.length >= 5 || center.coord) && expandedOctet(center, dirs, lps.length)) continue;
       // มุมจากการทดลอง (เช่น H₂S 92.1°): ตรึงมุมระหว่างพันธะ ให้แรงผลักขยับเฉพาะคู่โดดเดี่ยว
       const fixed = center.targetAngle != null && n >= 2;
       for (const lp of lps) dirs.push({ x: lp.x, y: lp.y, z: lp.z, lp: true, ref: lp });

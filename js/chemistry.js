@@ -18,10 +18,17 @@ export class Atom {
     this.partialCharge = 0; // ประจุหลังเฉลี่ยเรโซแนนซ์ (เช่น −⅔ ใน CO₃²⁻)
     this.displayCharge = 0; // ประจุที่แสดงบนอะตอม (รวมประจุไอออนในสารประกอบไอออนิก)
     this.userCharge = 0; // ประจุที่ผู้ใช้เติม/ดึงอิเล็กตรอน (ผลรวมทั้งโมเลกุล = ประจุสุทธิ)
+    this.octetMode = false; // แสดงแบบแยกประจุตามกฎออกเตต (แทนเวเลนซ์ขยาย) เช่น S²⁺ กับ O⁻ 4 ตัวในซัลเฟต
+    this.coord = null; // ไอออนโลหะกลางของสารเชิงซ้อน: { ox, oxOk, cnOk, virtualLP }
+    this.bridgeH = false; // H สะพานในพันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน (B–H–B)
   }
-  get valences() { return valencesFor(this.el, this.charge); }
+  get valences() {
+    // ไอออนโลหะกลาง: พันธะโคออร์ดิเนตไม่นับเป็นเวเลนซ์ ครบเมื่อเลขออกซิเดชันและเลขโคออร์ดิเนชันสมเหตุสมผล
+    if (this.coord) return this.coord.oxOk && this.coord.cnOk ? [0] : [];
+    return valencesFor(this.el, this.charge, this.octetMode);
+  }
   get neighbors() { return this.bonds.map((b) => b.other(this)); }
-  get bondOrderSum() { return this.bonds.reduce((s, b) => s + b.order, 0); }
+  get bondOrderSum() { return this.bonds.reduce((s, b) => s + b.valenceOrder, 0); }
   bondTo(other) { return this.bonds.find((b) => b.other(this) === other) || null; }
   hasFreeSlot() { return this.bonds.length < this.el.maxNeighbors; }
   /** ค่าเวเลนซ์เป้าหมายที่ใกล้ที่สุด (ค่าที่อนุญาตที่น้อยที่สุดซึ่ง >= จำนวนพันธะปัจจุบัน) */
@@ -32,7 +39,7 @@ export class Atom {
     return v === undefined ? Math.max(...vs) : v;
   }
   isSatisfied() { return this.valences.includes(this.bondOrderSum); }
-  missingBonds() { return Math.max(0, this.targetValence() - this.bondOrderSum); }
+  missingBonds() { return Math.ceil(Math.max(0, this.targetValence() - this.bondOrderSum)); }
   /** ความคลาดเคลื่อนจากเวเลนซ์ที่อนุญาต (0 = ครบพอดี) */
   valenceError() {
     const vs = this.valences;
@@ -41,9 +48,13 @@ export class Atom {
     return Math.min(...vs.map((v) => Math.abs(v - s)));
   }
   lonePairs() {
+    // สี่เหลี่ยมแบนราบของไอออนโลหะ d⁸/d⁹: ใช้ "คู่โดดเดี่ยวเสมือน" 2 คู่บน–ล่าง ให้ฟิสิกส์จัดรูปแบบ AX₄E₂
+    if (this.coord) return this.coord.virtualLP;
     const ve = this.el.valenceElectrons;
     if (ve == null) return 0;
-    return Math.max(0, Math.floor((ve - this.charge - this.bondOrderSum) / 2));
+    // คู่อิเล็กตรอนที่ให้ไปในพันธะโคออร์ดิเนตไม่ใช่คู่โดดเดี่ยวแล้ว
+    const donated = this.bonds.filter((b) => b.coord && b.donor === this).length;
+    return Math.max(0, Math.floor((ve - this.charge - this.bondOrderSum) / 2) - donated);
   }
 }
 
@@ -53,9 +64,14 @@ export class Bond {
     this.b = b;
     this.order = 1;
     this.resonance = null; // อันดับพันธะเฉลี่ยจากเรโซแนนซ์ (เช่น 1.5) หรือ null
+    this.coord = false; // พันธะโคออร์ดิเนต: ลิแกนด์ (donor) ให้คู่อิเล็กตรอนแก่ไอออนโลหะ
+    this.donor = null;
+    this.bridge = false; // ครึ่งหนึ่งของพันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน B–H–B
   }
   other(x) { return x === this.a ? this.b : this.a; }
   get effectiveOrder() { return this.resonance ?? this.order; }
+  /** ส่วนที่นับเป็นเวเลนซ์: พันธะโคออร์ดิเนตไม่นับ, พันธะสะพาน B–H–B นับครึ่ง (อิเล็กตรอน 2 ตัวใช้ร่วมกัน 3 อะตอม) */
+  get valenceOrder() { return this.coord ? 0 : this.bridge ? 0.5 : this.order; }
 }
 
 /**
@@ -63,8 +79,9 @@ export class Bond {
  * ขั้นที่ 1: เพิ่มอันดับพันธะระหว่างอะตอมที่ยังขาดทั้งสองฝั่ง (เลือกคู่ที่มีทางเลือกน้อยที่สุดก่อน)
  * ขั้นที่ 2: ให้อะตอมที่ขยายเวเลนซ์ได้ (เช่น S, P, N) รับพันธะเพิ่มเพื่ออะตอมข้างเคียงที่ยังขาด
  */
-export function assignBondOrders(atoms, bonds) {
-  for (const b of bonds) b.order = 1;
+export function assignBondOrders(atoms, allBonds) {
+  const bonds = allBonds.filter((b) => !b.coord && !b.bridge);
+  for (const b of allBonds) b.order = 1;
   const target = new Map(atoms.map((a) => [a, a.targetValence(a.bonds.length)]));
   const deficient = (a) => a.bondOrderSum < target.get(a);
   const options = (a) => a.bonds.filter((b) => b.order < 3 && deficient(b.other(a))).length;
@@ -101,6 +118,8 @@ function chargeOptions(a) {
   if (a.el.symbol === 'H' || a.el.valenceElectrons == null) return [0];
   // โลหะหมู่ 13 (Al, Ga) รับพันธะโคออร์ดิเนตได้ เช่น Al₂Cl₆, AlCl₄⁻
   if (isMetal(a.el)) return a.el.group === 13 ? [-1, 0] : [0];
+  // แบบแยกประจุ (กฎออกเตต): อะตอมกลางคาบ 3 ขึ้นไปมีประจุบวกสูงได้ เช่น S²⁺ ในซัลเฟต, Cl³⁺ ในเปอร์คลอเรต
+  if (a.octetMode && a.el.period >= 3) return [-1, 0, 1, 2, 3];
   return [-1, 0, 1];
 }
 
@@ -134,7 +153,7 @@ export function solveCharges(atoms, bonds, Q) {
   // เก็บสถานะที่ดีที่สุดซึ่งประจุรวมตรงกับ Q (ใช้เป็นคำตอบสุดท้าย)
   let valid = best.valid ? { score: best.score, charges: atoms.map((a) => a.charge) } : null;
   let evals = 0;
-  for (let step = 0; step < 10 && !best.done; step++) {
+  for (let step = 0; step < 14 && !best.done; step++) {
     const cand = new Set();
     for (const a of atoms) {
       if (a.valenceError() > 0) { cand.add(a); a.neighbors.forEach((n) => cand.add(n)); }
@@ -169,19 +188,157 @@ export function solveCharges(atoms, bonds, Q) {
 
 /** ประจุสุทธิที่จะทำให้โมเลกุลครบ (ใช้เป็นคำใบ้) — ไม่เปลี่ยนสถานะจริง */
 export function suggestCharge(comp) {
-  if (comp.atoms.length > 14) return null;
-  const charges = comp.atoms.map((a) => a.charge);
-  const orders = comp.bonds.map((b) => b.order);
   const current = comp.atoms.reduce((s, a) => s + a.userCharge, 0);
+  const metal = comp.atoms.find((a) => a.coord);
+  // สารเชิงซ้อน: ประจุรวม = เลขออกซิเดชันที่พบบ่อยของโลหะ + ประจุของลิแกนด์
+  const tries = metal
+    ? oxStates(metal.el).map((ox) => ox + metal.coord.ligandCharge)
+    : comp.atoms.length > 14 ? [] : [1, -1, 2, -2, 3, -3];
   let found = null;
-  for (const q of [1, -1, 2, -2, 3, -3]) {
+  for (const q of tries) {
     if (q === current) continue;
-    solveCharges(comp.atoms, comp.bonds, q);
+    solveComponent(comp, q);
     if (comp.atoms.every((a) => a.isSatisfied())) { found = q; break; }
   }
-  comp.atoms.forEach((a, i) => { a.charge = charges[i]; });
-  comp.bonds.forEach((b, i) => { b.order = orders[i]; });
+  if (tries.length) solveComponent(comp, current);
   return found;
+}
+
+// ---------- สารประกอบเชิงซ้อนของโลหะทรานซิชัน และพันธะ 3 ศูนย์กลาง ----------
+
+// เลขออกซิเดชันที่พบในสารเชิงซ้อน (เรียงจากที่พบบ่อยที่สุด) และเลขโคออร์ดิเนชันที่พบบ่อย
+const OX_STATES = {
+  Sc: [3], Ti: [4, 3], V: [3, 4, 5, 2], Cr: [3, 0, 2, 6], Mn: [2, 3, 4, 7, 0], Fe: [3, 2, 0], Co: [3, 2, 0],
+  Ni: [2, 0], Cu: [2, 1], Zn: [2], Y: [3], Zr: [4], Mo: [0, 3, 6], Ru: [2, 3], Rh: [3, 1], Pd: [2, 0, 4],
+  Ag: [1], Cd: [2], W: [0, 6], Re: [1, 7], Os: [2, 3, 8], Ir: [3, 1], Pt: [2, 4, 0], Au: [3, 1], Hg: [2],
+};
+const CN_TYPICAL = { Ag: [2], Au: [4, 2], Hg: [2, 4], Cu: [4, 6, 2], Zn: [4, 6], Cd: [4, 6], Ni: [4, 6], Pd: [4], Pt: [4, 6], Fe: [6, 5, 4], Co: [6, 4] };
+export function oxStates(el) { return OX_STATES[el.symbol] || el.valences; }
+export function typicalCN(el) { return CN_TYPICAL[el.symbol] || [6, 4]; }
+const HALIDE = new Set(['F', 'Cl', 'Br', 'I']);
+const BRIDGE_EL = new Set(['B', 'Al', 'Ga']);
+export const BRIDGE_ANGLE = 83; // มุม B–H–B ของไดโบเรน (CCCBDB)
+
+/** H ที่ต่อกับ B แล้วต่อกับ B อีกอะตอมได้ (เกิด H สะพาน) */
+export function canBridge(h, x) {
+  return h.el.symbol === 'H' && h.bonds.length === 1 && BRIDGE_EL.has(x.el.symbol) && BRIDGE_EL.has(h.neighbors[0].el.symbol);
+}
+
+/** ส่วนย่อยที่ต่อกับ M (ไม่ผ่าน M) = ลิแกนด์หนึ่งตัว */
+function ligandFragments(M) {
+  const frags = [];
+  const owner = new Map();
+  for (const b of M.bonds) {
+    const start = b.other(M);
+    if (owner.has(start)) { owner.get(start).donors.push(start); continue; }
+    const atoms = [];
+    const bonds = new Set();
+    const stack = [start];
+    const frag = { atoms, bonds: [], donors: [start], q: 0, ok: false };
+    owner.set(start, frag);
+    atoms.push(start);
+    while (stack.length) {
+      const a = stack.pop();
+      for (const bb of a.bonds) {
+        const o = bb.other(a);
+        if (o === M) continue;
+        bonds.add(bb);
+        if (!owner.has(o)) { owner.set(o, frag); atoms.push(o); stack.push(o); }
+      }
+    }
+    frag.bonds = [...bonds];
+    frags.push(frag);
+  }
+  return frags;
+}
+
+/**
+ * สารเชิงซ้อน: ไอออนโลหะทรานซิชันหนึ่งอะตอม + ลิแกนด์ที่ให้คู่อิเล็กตรอน (NH₃, H₂O, CN⁻, Cl⁻, CO)
+ * หาประจุของลิแกนด์แต่ละตัวแยกกัน แล้วเลขออกซิเดชันของโลหะ = ประจุรวม − ประจุลิแกนด์
+ * คืนค่า false ถ้าไม่ใช่สารเชิงซ้อน (เช่น TiCl₄, MnO₄⁻ ใช้แบบจำลองพันธะปกติ)
+ */
+function solveComplex(comp, Q) {
+  const metals = comp.atoms.filter((a) => a.el.category === 'transition' && a.bonds.length);
+  if (metals.length !== 1) return false;
+  const M = metals[0];
+  if (M.neighbors.some((n) => isMetal(n.el))) return false;
+  const frags = ligandFragments(M);
+  if (frags.some((f) => f.atoms.some((a) => isMetal(a.el)))) return false;
+  for (const b of M.bonds) { b.coord = true; b.donor = b.other(M); b.order = 1; }
+  M.charge = 0;
+  for (const f of frags) {
+    const donated = (a) => f.donors.filter((d) => d === a).length;
+    const good = () => f.atoms.every((a) => a.isSatisfied())
+      && f.donors.every((d) => d.el.valenceElectrons != null && d.el.valenceElectrons - d.charge - d.bondOrderSum >= 2 * donated(d));
+    for (const q of [0, -1, -2, 1, -3]) {
+      solveCharges(f.atoms, f.bonds, q);
+      if (good()) { f.q = q; f.ok = true; break; }
+    }
+    if (!f.ok) { solveCharges(f.atoms, f.bonds, 0); f.q = 0; }
+  }
+  const neutralLigand = frags.some((f) => f.ok && f.q === 0);
+  if (!neutralLigand && M.bonds.length <= Math.max(...M.el.valences)) {
+    for (const b of M.bonds) { b.coord = false; b.donor = null; }
+    return false;
+  }
+  const ligandCharge = frags.reduce((s, f) => s + f.q, 0);
+  const ox = Q - ligandCharge;
+  const cn = M.bonds.length;
+  const d = M.el.group - ox; // จำนวนอิเล็กตรอน d (หมู่ 3–12)
+  // รูปร่างของ CN 4: d⁸ ของคาบ 5–6 (Pd²⁺, Pt²⁺, Au³⁺) หรือ d⁸ ที่ลิแกนด์สนามแรง (CN⁻, CO) และ Cu²⁺ (d⁹) ที่ไม่ใช่ฮาไลด์ → สี่เหลี่ยมแบนราบ
+  const donors = M.neighbors;
+  const strong = donors.every((x) => x.el.symbol === 'C');
+  const halide = donors.some((x) => HALIDE.has(x.el.symbol));
+  const square = cn === 4 && ((d === 8 && (M.el.period >= 5 || strong)) || (d === 9 && !halide));
+  M.charge = ox;
+  M.coord = {
+    ox, cn, d, ligandCharge,
+    oxOk: oxStates(M.el).includes(ox),
+    cnOk: typicalCN(M.el).includes(cn) || cn === 4 || cn === 6,
+    virtualLP: square ? 2 : 0,
+    geometry: cn === 2 ? 'linear' : cn === 4 ? (square ? 'square' : 'tetra') : cn === 5 ? 'tbp' : cn === 6 ? 'octa' : null,
+    ligands: frags,
+  };
+  return true;
+}
+
+/** H สะพาน: H ที่ต่อกับ B (หรือ Al, Ga) สองอะตอม → พันธะ 3 ศูนย์กลาง 2 อิเล็กตรอน */
+function markBridges(comp) {
+  for (const h of comp.atoms) {
+    if (h.el.symbol !== 'H' || h.bonds.length !== 2) continue;
+    if (!h.neighbors.every((x) => BRIDGE_EL.has(x.el.symbol))) continue;
+    h.bridgeH = true;
+    h.bonds.forEach((b) => { b.bridge = true; });
+  }
+}
+
+/** จัดพันธะและประจุของหนึ่งโมเลกุล (รวมกรณีพิเศษ: สารเชิงซ้อน, พันธะสะพาน, แบบแยกประจุ) */
+export function solveComponent(comp, Q) {
+  for (const a of comp.atoms) { a.coord = null; a.bridgeH = false; }
+  for (const b of comp.bonds) { b.coord = false; b.donor = null; b.bridge = false; }
+  markBridges(comp);
+  if (solveComplex(comp, Q)) return;
+  solveCharges(comp.atoms, comp.bonds, Q);
+}
+
+/** ลองดูว่าโมเลกุลนี้เขียนแบบแยกประจุตามกฎออกเตตได้ครบหรือไม่ (ไม่เปลี่ยนสถานะ) */
+export function octetFeasible(comp) {
+  const Q = comp.atoms.reduce((s, a) => s + a.userCharge, 0);
+  const was = comp.atoms.map((a) => a.octetMode);
+  comp.atoms.forEach((a) => { a.octetMode = true; });
+  solveComponent(comp, Q);
+  const ok = comp.atoms.every((a) => a.isSatisfied());
+  comp.atoms.forEach((a, i) => { a.octetMode = was[i]; });
+  solveComponent(comp, Q);
+  detectResonance(comp.atoms, comp.bonds);
+  assignDisplayCharges(comp.atoms);
+  return ok;
+}
+
+/** อะตอมกลางที่มีอิเล็กตรอนรอบตัวเกิน 8 (เวเลนซ์ขยาย) เช่น S ใน SO₄²⁻, P ใน PCl₅ */
+export function expandedOctetAtom(comp) {
+  return comp.atoms.find((a) => a.el.period >= 3 && a.el.valenceElectrons != null && !isMetal(a.el)
+    && 2 * (a.bondOrderSum + a.lonePairs()) > 8) || null;
 }
 
 export class ChemSystem {
@@ -215,7 +372,9 @@ export class ChemSystem {
   }
 
   canBond(a, b) {
-    return a !== b && !a.bondTo(b) && a.hasFreeSlot() && b.hasFreeSlot();
+    if (a === b || a.bondTo(b)) return false;
+    // H สะพาน (B–H–B) เป็นกรณีเดียวที่ H ต่อได้ 2 อะตอม
+    return (a.hasFreeSlot() || canBridge(a, b)) && (b.hasFreeSlot() || canBridge(b, a));
   }
 
   addBond(a, b) {
@@ -254,7 +413,7 @@ export class ChemSystem {
 
   /** เติมอิเล็กตรอน (delta = -1) หรือดึงอิเล็กตรอนออก (delta = +1) */
   addCharge(atom, delta) {
-    const next = Math.max(-3, Math.min(3, atom.userCharge + delta));
+    const next = Math.max(-4, Math.min(4, atom.userCharge + delta));
     if (next === atom.userCharge) return false;
     atom.userCharge = next;
     this._reassign(atom);
@@ -262,10 +421,17 @@ export class ChemSystem {
     return true;
   }
 
+  /** สลับแบบแยกประจุ (กฎออกเตต) ↔ แบบเวเลนซ์ขยายของโมเลกุลที่มีอะตอมนี้ */
+  setOctetMode(atom, on) {
+    this.componentOf(atom).atoms.forEach((a) => { a.octetMode = on; });
+    this._reassign(atom);
+    this.version++;
+  }
+
   _reassign(atom) {
     const comp = this.componentOf(atom);
     const q = comp.atoms.reduce((s, a) => s + a.userCharge, 0);
-    solveCharges(comp.atoms, comp.bonds, q);
+    solveComponent(comp, q);
     detectResonance(comp.atoms, comp.bonds);
     assignDisplayCharges(comp.atoms);
   }
@@ -338,17 +504,21 @@ export function analyze(comp) {
   const single = comp.atoms.length === 1 ? comp.atoms[0] : null;
   const entry = !single || charge ? findMolecule(hill, comp, complete, charge) : null;
   const bondCounts = [0, 0, 0];
+  let coordCount = 0; let bridgeCount = 0;
   let maxDEN = 0;
   for (const b of comp.bonds) {
-    bondCounts[b.order - 1]++;
+    if (b.coord) coordCount++;
+    else if (b.bridge) bridgeCount++;
+    else bondCounts[b.order - 1]++;
     if (b.a.el.en != null && b.b.el.en != null) maxDEN = Math.max(maxDEN, Math.abs(b.a.el.en - b.b.el.en));
   }
-  let central = null;
-  for (const a of comp.atoms) if (a.bonds.length >= 2 && (!central || a.bonds.length > central.bonds.length)) central = a;
+  let central = comp.atoms.find((a) => a.coord) || null;
+  if (!central) for (const a of comp.atoms) if (a.bonds.length >= 2 && !a.bridgeH && (!central || a.bonds.length > central.bonds.length)) central = a;
   const ionic = comp.bonds.some((b) => bondTypeOf(b) === 'ionic');
   const formula = entry ? entry.f : hill;
   return {
-    counts, hill, mass, complete, missing, entry, bondCounts, maxDEN, charge,
+    counts, hill, mass, complete, missing, entry, bondCounts, coordCount, bridgeCount, maxDEN, charge,
+    complex: central?.coord ? complexInfo(central) : null,
     formula,
     pretty: prettyFormula(formula) + chargeSuffix(charge),
     central,
@@ -367,6 +537,31 @@ export function analyze(comp) {
     metalEl: comp.atoms[0].el,
   };
 }
+
+/** สรุปสารเชิงซ้อน: ไอออนกลาง เลขออกซิเดชัน ลิแกนด์ (จัดกลุ่มตามสูตร) และสิ่งที่ยังขาด */
+function complexInfo(M) {
+  const c = M.coord;
+  const groups = new Map();
+  for (const f of c.ligands) {
+    const counts = {};
+    f.atoms.forEach((a) => { counts[a.el.symbol] = (counts[a.el.symbol] || 0) + 1; });
+    const hill = hillFormula(counts);
+    const pretty = prettyFormula(LIGAND_FORMULA[hill] || hill) + chargeSuffix(f.q);
+    const g = groups.get(pretty) || { pretty, n: 0, q: f.q, ok: f.ok, donor: f.donors[0].el.symbol, dentate: f.donors.length };
+    g.n++;
+    groups.set(pretty, g);
+  }
+  const want = typicalCN(M.el).find((n) => n >= c.cn);
+  return {
+    metal: M, ox: c.ox, cn: c.cn, d: c.d, geometry: c.geometry, oxOk: c.oxOk, cnOk: c.cnOk,
+    ion: M.el.symbol + chargeSuffix(c.ox),
+    ligands: [...groups.values()],
+    needLigands: !c.cnOk && want ? want - c.cn : 0,
+    ligandsOk: c.ligands.every((f) => f.ok),
+  };
+}
+// เขียนสูตรลิแกนด์แบบที่ใช้ในตำรา (อะตอมที่ให้อิเล็กตรอนขึ้นก่อน)
+const LIGAND_FORMULA = { H3N: 'NH3', H2O: 'H2O', CN: 'CN', CO: 'CO', HO: 'OH', C2H8N2: 'en', C2O4: 'C2O4', CNS: 'SCN' };
 
 /** แยกสารประกอบไอออนิกออกเป็นไอออน — คืนค่า [{ hill, pretty, q, n, symbol }] (symbol = ไอออนอะตอมเดี่ยว) */
 export function ionList(comp) {
@@ -586,7 +781,8 @@ export function ionClusters(entries, maxGap = 0.12) {
  */
 export function applyExperimentalGeometry(entries, enabled = true) {
   for (const { comp, info } of entries) {
-    comp.atoms.forEach((a) => { a.targetAngle = null; });
+    // H สะพานของไดโบเรนใช้มุม B–H–B จริงเสมอ (VSEPR ใช้ไม่ได้กับพันธะ 3 ศูนย์กลาง)
+    comp.atoms.forEach((a) => { a.targetAngle = a.bridgeH ? BRIDGE_ANGLE : null; });
     comp.bonds.forEach((b) => { b.targetDihedral = null; });
     const exp = enabled ? info.entry?.exp : null;
     if (!exp) continue;
@@ -636,6 +832,7 @@ function metalNonmetalIonic(metal, other) {
 }
 
 export function bondTypeOf(bond) {
+  if (bond.coord) return 'coordinate';
   const ea = bond.a.el.en; const eb = bond.b.el.en;
   const ma = isMetal(bond.a.el); const mb = isMetal(bond.b.el);
   if (ma && mb) return 'metallic';

@@ -228,7 +228,8 @@ const VALENCE_OVERRIDE = {
 };
 // จำนวนอะตอมที่ต่อได้สูงสุด (ถ้าไม่ระบุ = ค่าเวเลนซ์สูงสุด)
 // N/O/B/Al ต่อได้มากกว่าเวเลนซ์ปกติเมื่อมีประจุ เช่น NH₄⁺, H₃O⁺, BF₄⁻, AlCl₄⁻
-const MAX_NEIGHBORS = { N: 4, O: 3, B: 4, Al: 4, Cl: 4, Br: 5, I: 5, Os: 4, Mn: 4, Re: 4, Tc: 4 };
+// โลหะทรานซิชันรับลิแกนด์ได้ถึง 6 (สารเชิงซ้อน เช่น [Fe(CN)₆]³⁻)
+const MAX_NEIGHBORS = { N: 4, O: 3, B: 4, Al: 4, Cl: 4, Br: 5, I: 5 };
 
 function valenceOf(sym, z, group, cat) {
   if (VALENCE_OVERRIDE[sym]) return VALENCE_OVERRIDE[sym];
@@ -289,7 +290,7 @@ for (const line of RAW.trim().split('\n')) {
     covalentRadius: COV[z - 1] || 1.6,
     valenceElectrons: valenceElectronsOf(z, group),
     valences,
-    maxNeighbors: Math.min(6, MAX_NEIGHBORS[symbol] ?? Math.max(...valences)),
+    maxNeighbors: Math.min(6, MAX_NEIGHBORS[symbol] ?? (category === 'transition' && z < 104 ? 6 : Math.max(...valences))),
     shells: shellsOf(z, category, group),
     synthetic: z >= 104,
   };
@@ -306,14 +307,15 @@ export function isMetal(el) {
  * เวเลนซ์ที่อนุญาตเมื่ออะตอมมีประจุ (ฟอร์มอล) — ใช้หลักไอโซอิเล็กทรอนิก:
  * N⁺ มีอิเล็กตรอนวงนอกเท่า C จึงต่อได้ 4 พันธะ, O⁻ เท่า F ต่อได้ 1, Na⁺ เท่าแก๊สมีตระกูล ต่อไม่ได้
  */
-export function valencesFor(el, charge) {
-  if (!charge) return el.valences;
-  if (el.symbol === 'H') return [0]; // H⁺ หรือ H⁻ อยู่เดี่ยว ๆ
+export function valencesFor(el, charge, octet = false) {
+  // octet = แบบแยกประจุที่ทุกอะตอมมีอิเล็กตรอนไม่เกิน 8 (ไม่ใช้เวเลนซ์ขยาย)
   const ve = el.valenceElectrons;
+  if (!charge) return octet && el.period >= 3 && ve != null ? [Math.min(...el.valences)] : el.valences;
+  if (el.symbol === 'H') return [0]; // H⁺ หรือ H⁻ อยู่เดี่ยว ๆ
   if (ve == null) return el.valences.map((v) => v - charge).filter((v) => v >= 0);
   const v = ve - charge;
   if (v < 0 || v > 8) return [];
-  const expanded = el.period >= 3;
+  const expanded = el.period >= 3 && !octet;
   if (v <= 4) return [v];
   if (v === 5) return expanded ? [3, 5] : [3];
   if (v === 6) return expanded ? [2, 4, 6] : [2];

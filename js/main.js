@@ -334,6 +334,7 @@ function duplicateSelection() {
   for (const a of comp.atoms) {
     for (let k = 0; k < Math.abs(a.userCharge); k++) sys.addCharge(map.get(a), Math.sign(a.userCharge));
   }
+  if (atom.octetMode) sys.setOctetMode(map.get(atom), true);
   sfx.spawn();
   return [...map.values()];
 }
@@ -396,7 +397,14 @@ $('info-body').addEventListener('click', (e) => {
   else if (act === 'duplicate') duplicateSelection();
   else if (act === 'flip') flipSelection();
   else if (act === 'mirror') mirrorSelection();
-  else if (act === 'expToggle') {
+  else if (act.startsWith('octet:')) {
+    const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
+    if (atom) {
+      const on = act === 'octet:on';
+      sys.setOctetMode(atom, on);
+      toast(t(on ? 'octetOnToast' : 'octetOffToast'));
+    }
+  } else if (act === 'expToggle') {
     views.setExperimental(!views.useExperimental);
     toast(t(views.useExperimental ? 'usingExp' : 'usingVsepr'));
   }

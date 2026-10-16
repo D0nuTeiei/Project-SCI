@@ -1,7 +1,7 @@
 // สร้างข้อมูลสำหรับการ์ดข้อมูล (HTML และการ์ด 3D ใน XR)
 import * as THREE from 'three';
 import { CATEGORIES, elementName } from './elements.js';
-import { analyze, dipoleMagnitude, shapeOf, suggestCharge, intermolecularForces, bondTypeOf } from './chemistry.js';
+import { analyze, dipoleMagnitude, shapeOf, suggestCharge, intermolecularForces, bondTypeOf, expandedOctetAtom, octetFeasible } from './chemistry.js';
 import { moleculeBondEnergy } from './energy.js';
 import { structureOptions, metalPacking } from './lattice.js';
 import { chargeSuffix } from './molecules.js';
@@ -89,13 +89,23 @@ export function describeMolecule(sys, atom, ctx = {}) {
   ];
   const [s, d2, tr] = info.bondCounts;
   if (!ionicOnly) {
-    const list = [s && `${t('single')} ${s}`, d2 && `${t('double')} ${d2}`, tr && `${t('triple')} ${tr}`].filter(Boolean).join(', ');
+    const list = [s && `${t('single')} ${s}`, d2 && `${t('double')} ${d2}`, tr && `${t('triple')} ${tr}`,
+      info.coordCount && t('bondsCoord', info.coordCount), info.bridgeCount && t('bondsBridge', info.bridgeCount / 2)].filter(Boolean).join(', ');
     rows.push([t('bonds'), info.resonance.length ? `${list} ${t('oneLewis')}` : list]);
   }
   if (info.central) {
     const shape = shapeOf(info.central);
     if (shape) rows.push([t('shape'), `${lang === 'th' ? shape.th : shape.en} (${shape.angle}) · ${t('around')} ${info.central.el.symbol}`]);
   }
+  // สารประกอบเชิงซ้อน: ไอออนกลาง ลิแกนด์ เลขโคออร์ดิเนชัน และเหตุผลของรูปร่าง
+  const cx = info.complex;
+  if (cx) {
+    const ligs = cx.ligands.map((l) => (l.n > 1 ? `${l.n} ${l.pretty}` : l.pretty)).join(' + ');
+    rows.push([t('complexRow'), t('complexSummary', cx.ion, String(cx.d).replace(/\d/g, (x) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[x]), ligs, cx.cn)]);
+    rows.push([t('coordBondRow'), t('coordBondNote')]);
+    if (info.complete && cx.geometry) rows.push(['', `${t('geomNote')[cx.geometry]} — ${t('geomVsepr')}`]);
+  }
+  if (info.bridgeCount) rows.push([t('bridgeRow'), t('bridgeNote', comp.atoms.filter((a) => a.bridgeH).length)]);
   // เรขาคณิตจากการทดลอง เทียบกับที่ VSEPR ทำนาย
   const exp = info.entry?.exp;
   if (exp?.shapeEn) rows.push([t('expShapeRow'), lang === 'th' ? exp.shapeTh : exp.shapeEn]);
@@ -105,18 +115,34 @@ export function describeMolecule(sys, atom, ctx = {}) {
   // ไอโซเมอร์เชิงพื้นที่
   const stereo = ctx.stereo;
   for (const db of stereo?.dbs || []) {
-    rows.push([t('geoIsomer'), `${db.cisTrans ? `${db.cisTrans} (${db.ez})` : db.ez} — ${t('geoIsomerNote')}`]);
+    if (db.kind === 'complex') rows.push([t('geoIsomer'), `${db.cisTrans} — ${t('complexIsomerNote')}`]);
+    else rows.push([t('geoIsomer'), `${db.cisTrans ? `${db.cisTrans} (${db.ez})` : db.ez} — ${t('geoIsomerNote')}`]);
   }
   if (stereo?.centers.length) {
     const list = stereo.centers.map((c) => `${c.atom.el.symbol}(${c.label})`).join(', ');
     const ld = e?.aminoAcid && stereo.centers.length === 1 ? ` = ${stereo.centers[0].label === 'S' ? 'L' : 'D'}-${lang === 'th' ? e.th : e.en}` : '';
     rows.push([t('chiralRow'), `${list}${ld} — ${t('chiralNote')}`]);
   }
-  rows.push([t('bondType'), ionicOnly ? t('ionic') : info.ionic ? `${t('ionic')} + ${t('covalent')}` : t('covalent')]);
+  rows.push([t('bondType'), ionicOnly ? t('ionic') : info.ionic ? `${t('ionic')} + ${t('covalent')}` : cx ? `${t('coordBondRow')} + ${t('covalent')}` : t('covalent')]);
+  // ข้อถกเถียงเรื่องเวเลนซ์ขยาย (S ในซัลเฟต, P ในฟอสเฟต, S ใน SF₆)
+  const octetOn = comp.atoms.some((a) => a.octetMode);
+  let octetAction = null;
+  if (octetOn) {
+    rows.push([t('octetRow'), t('octetNote')]);
+    octetAction = { id: 'octet:off', label: t('octetOff') };
+  } else if (info.complete) {
+    const hx = expandedOctetAtom(comp);
+    if (hx) {
+      const oxo = hx.bonds.some((b) => b.order >= 2 && b.other(hx).el.symbol === 'O');
+      rows.push([t('hyperRow'), oxo ? t('hyperNoteO', hx.el.symbol) : t('hyperNoteX', hx.el.symbol)]);
+      if (oxo && comp.atoms.length <= 16 && octetFeasible(comp)) octetAction = { id: 'octet:on', label: t('octetOn') };
+    }
+  }
   if (info.charge) rows.unshift([t('netCharge'), chargeText(info.charge)]);
   if (info.ions) rows.push([t('ions'), info.ions]);
   // ประจุฟอร์มอลหลังเฉลี่ยเรโซแนนซ์ (เช่น O₃: O⁺ กลาง, O ปลายละ −½)
-  const charged = comp.atoms.filter((a) => Math.abs(a.partialCharge) > 1e-6);
+  // ไอออนโลหะกลางของสารเชิงซ้อนแสดงเลขออกซิเดชันในแถวสารเชิงซ้อนแล้ว
+  const charged = comp.atoms.filter((a) => Math.abs(a.partialCharge) > 1e-6 && !a.coord);
   if (charged.length && !info.single) rows.push([t('formalCharges'), charged.map((a) => `${a.el.symbol}(${fracCharge(a.partialCharge)})`).join(', ')]);
   if (info.radical) rows.unshift([t('status'), t('radicalNote')]);
   if (info.complete && !info.ionic && !info.charge) rows.push([t('polarity'), dipoleMagnitude(comp) > 0.3 ? t('polar') : t('nonpolar')]);
@@ -148,7 +174,10 @@ export function describeMolecule(sys, atom, ctx = {}) {
     const q = suggestCharge(comp);
     if (q) rows.unshift([t('hintRow'), t('hintCharge', q - info.charge)]);
   }
-  if (!info.complete && !info.radical) {
+  if (cx && !info.complete) {
+    const why = cx.needLigands ? t('needLigands', cx.needLigands) : !cx.oxOk ? t('badOx', cx.ion) : !cx.ligandsOk ? t('ligandCheck') : '';
+    if (why) rows.unshift([t('status'), `${t('incomplete')}: ${why}`]);
+  } else if (!info.complete && !info.radical) {
     const missing = comp.atoms.filter((a) => a.missingBonds() > 0).map((a) => t('missingAt', a.el.symbol, a.missingBonds()));
     const uniq = [...new Set(missing)];
     rows.unshift([t('status'), `${t('incomplete')}: ${uniq.length ? uniq.join(', ') : t('overValence')}`]);
@@ -166,6 +195,7 @@ export function describeMolecule(sys, atom, ctx = {}) {
       ...(exp?.angle || exp?.dihedral ? [{ id: 'expToggle', label: ctx.useExperimental === false ? t('useExp') : t('useVsepr') }] : []),
       ...(stereo?.dbs.some((d) => d.cisTrans || d.ez) ? [{ id: 'flip', label: t('flipCisTrans') }] : []),
       ...(stereo?.centers.length ? [{ id: 'mirror', label: t('mirror') }] : []),
+      ...(octetAction ? [octetAction] : []),
       { id: 'duplicate', label: t('duplicate') },
     ],
   };

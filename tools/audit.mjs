@@ -11,8 +11,8 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 import { BY_SYMBOL } from '../js/elements.js';
-import { ChemSystem, analyze, shapeOf, dipoleMagnitude, findHydrogenBonds, applyExperimentalGeometry, bondTypeOf } from '../js/chemistry.js';
-import { findStereocenters, doubleBondStereo, flipDoubleBond, mirrorPositions } from '../js/stereo.js';
+import { ChemSystem, analyze, shapeOf, dipoleMagnitude, findHydrogenBonds, applyExperimentalGeometry, bondTypeOf, expandedOctetAtom, octetFeasible } from '../js/chemistry.js';
+import { findStereocenters, doubleBondStereo, flipDoubleBond, mirrorPositions, complexStereo } from '../js/stereo.js';
 import { structureOptions } from '../js/lattice.js';
 import { bondEnergy } from '../js/energy.js';
 import { latticeFor } from '../js/lattice.js';
@@ -165,16 +165,48 @@ for (const cs of CASES) {
   for (const k of Object.keys(FEATURE)) if (e[k]) add(FEATURE[k], false, 'ยังไม่มี', 'ควรมี');
   if (e.stereo === 'cis-trans') {
     const comp = r.sys.componentOf(r.heavy[0]);
-    const s1 = doubleBondStereo(comp)[0];
+    const iso = () => [...doubleBondStereo(comp), ...complexStereo(comp)][0];
+    const s1 = iso();
     const p1 = dipoleMagnitude(comp) > 0.3;
-    flipDoubleBond(r.sys, s1);
+    if (s1) flipDoubleBond(r.sys, s1);
     for (let f = 0; f < 900; f++) relax(r.sys);
-    const s2 = doubleBondStereo(comp)[0];
+    const s2 = iso();
     const p2 = dipoleMagnitude(comp) > 0.3;
-    const cisPolar = s1.cisTrans === 'cis' ? p1 : p2;
-    const transPolar = s1.cisTrans === 'trans' ? p1 : p2;
-    add('แยก cis/trans และสลับได้', s1.cisTrans && s2.cisTrans && s1.cisTrans !== s2.cisTrans, `${s1.cisTrans} → ${s2.cisTrans}`, 'cis ↔ trans');
-    add('cis มีขั้ว / trans ไม่มีขั้ว', cisPolar && !transPolar, `cis ${cisPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}, trans ${transPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}`, 'cis มีขั้ว, trans ไม่มีขั้ว');
+    const cisPolar = s1?.cisTrans === 'cis' ? p1 : p2;
+    const transPolar = s1?.cisTrans === 'trans' ? p1 : p2;
+    add('แยก cis/trans และสลับได้', s1?.cisTrans && s2?.cisTrans && s1.cisTrans !== s2.cisTrans, `${s1?.cisTrans} → ${s2?.cisTrans}`, 'cis ↔ trans');
+    // ไอออนเชิงซ้อนที่มีประจุไม่ตรวจสภาพขั้ว
+    if (!r.info.charge) add('cis มีขั้ว / trans ไม่มีขั้ว', cisPolar && !transPolar, `cis ${cisPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}, trans ${transPolar ? 'มีขั้ว' : 'ไม่มีขั้ว'}`, 'cis มีขั้ว, trans ไม่มีขั้ว');
+  }
+  if (e.bridge) {
+    const comp = r.sys.componentOf(r.heavy[0]);
+    const hs = comp.atoms.filter((a) => a.bridgeH);
+    const angs = hs.map((h) => angle(h, h.neighbors[0], h.neighbors[1]));
+    const got = angs.length ? median(angs) : NaN;
+    const [b1, b2] = r.heavy.filter((a) => a.el.symbol === 'B');
+    const bb = b1.bondTo(b2);
+    add('H สะพาน 2 อะตอม ไม่มีพันธะ B–B', hs.length === e.bridge.n && !bb, `H สะพาน ${hs.length}${bb ? ', มีพันธะ B–B' : ''}`, `${e.bridge.n}, ไม่มี B–B`);
+    add(`มุม B–H–B ~${e.bridge.angle}°`, Math.abs(got - e.bridge.angle) <= 6, Number.isFinite(got) ? `${got.toFixed(1)}°` : '–', `${e.bridge.angle}°`);
+  }
+  if (e.complex !== undefined) {
+    const cx = r.info.complex;
+    if (e.complex === null) add('ไม่ใช่สารเชิงซ้อน', !cx, cx ? 'สารเชิงซ้อน' : 'โมเลกุลโคเวเลนต์', 'โมเลกุลโคเวเลนต์');
+    else add('เลขออกซิเดชัน / เลขโคออร์ดิเนชัน', cx?.ox === e.complex.ox && cx?.cn === e.complex.cn, cx ? `${cx.ion}, CN ${cx.cn}` : 'ไม่ใช่สารเชิงซ้อน', `${e.complex.ox}, CN ${e.complex.cn}`);
+  }
+  if (e.hyper) {
+    const comp = r.sys.componentOf(r.heavy[0]);
+    const hx = expandedOctetAtom(comp);
+    const oxo = hx && hx.bonds.some((b) => b.order >= 2 && b.other(hx).el.symbol === 'O');
+    const kind = !hx ? 'none' : oxo ? 'oxo' : 'other';
+    add('หมายเหตุเวเลนซ์ขยาย', kind === e.hyper, kind, e.hyper);
+    if (e.octet) {
+      const feasible = octetFeasible(comp);
+      r.sys.setOctetMode(r.heavy[0], true);
+      const c = comp.atoms.find((a) => a.el.symbol === e.octet.center);
+      const single = c.bonds.every((b) => b.order === 1);
+      add('แบบแยกประจุตามกฎออกเตต', feasible && single && c.charge === e.octet.charge && analyze(comp).complete,
+        `${c.el.symbol}${c.charge > 0 ? '+' : ''}${c.charge}, ${single ? 'พันธะเดี่ยวทั้งหมด' : 'ยังมีพันธะคู่'}`, `${e.octet.center}+${e.octet.charge}, พันธะเดี่ยว`);
+    }
   }
   if (e.stereo === 'chiral') {
     const comp = r.sys.componentOf(r.heavy[0]);
@@ -220,7 +252,8 @@ const md = process.argv.indexOf('--md');
 if (md > 0) {
   const GROUP = {
     vsepr: 'รูปร่างโมเลกุล (VSEPR)', 'vsepr-limit': 'ข้อยกเว้นของ VSEPR จากการทดลอง', resonance: 'ประจุฟอร์มอลและเรโซแนนซ์',
-    ions: 'ไอออนและอนุมูลอิสระ', structure: 'พันธะไอออนิก โลหะ โครงผลึก', stereo: 'ไอโซเมอร์', imf: 'แรงระหว่างโมเลกุลและพลังงานพันธะ',
+    ions: 'ไอออนและอนุมูลอิสระ', structure: 'พันธะไอออนิก โลหะ โครงผลึก', beyond: 'เกินหลักสูตร: พันธะ 3 ศูนย์กลาง สารเชิงซ้อน เวเลนซ์ขยาย',
+    stereo: 'ไอโซเมอร์', imf: 'แรงระหว่างโมเลกุลและพลังงานพันธะ',
   };
   const esc = (x) => String(x).replace(/\|/g, '\\|');
   let out = '';
