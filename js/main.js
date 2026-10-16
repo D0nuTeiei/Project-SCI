@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ChemSystem } from './chemistry.js';
-import { relax, atomRadius } from './physics.js';
+import { relax, atomRadius, attractHydrogenBonds } from './physics.js';
+import { latticeFor } from './lattice.js';
 import { MoleculeViews } from './views.js';
 import { PeriodicPanel, PANEL_WIDTH, PANEL_HEIGHT } from './periodicPanel.js';
 import { Interaction, Pointer } from './interaction.js';
@@ -133,15 +134,29 @@ const app = {
     else if (id === 'lang') setLang(getLang() === 'th' ? 'en' : 'th');
     else if (id === 'chargePlus') changeCharge(1);
     else if (id === 'chargeMinus') changeCharge(-1);
+    else if (id === 'lattice') toggleLattice();
   },
-  onBond(a) {
+  onBond(a, b, energy) {
     sfx.bond();
     selection = { kind: 'atom', atom: a };
+    if (Number.isFinite(energy) && energy > 0) {
+      // การเกิดพันธะปล่อยพลังงาน (Boo 1998: นักเรียนเกือบครึ่งเข้าใจกลับกัน)
+      const pair = `${a.el.symbol}–${b.el.symbol}`;
+      lastEnergy = { text: `⚡ ${energy} kJ/mol`, time: performance.now() };
+      toast(t('bondFormedE', pair, energy));
+      views.burst(a.pos.clone().add(b.pos).multiplyScalar(0.5), 0xffd54f);
+    }
   },
-  onBreak() { sfx.break(); toast(t('broke')); },
-  onDetach() { sfx.break(); },
+  onBreak(atom, energy) {
+    sfx.break();
+    toast(Number.isFinite(energy) && energy > 0 ? t('bondBrokenE', energy) : t('broke'));
+  },
+  onDetach(atom, energy) {
+    sfx.break();
+    if (Number.isFinite(energy) && energy > 0) toast(t('bondBrokenE', energy));
+  },
   onRecycle() { sfx.recycle(); toast(t('recycled')); selection = null; },
-  onSelectAtom(atom) { selection = { kind: 'atom', atom }; panel.selected = null; },
+  onSelectAtom(atom) { selection = { kind: 'atom', atom }; panel.selected = null; infoDirty = true; },
   onSelectElement(el, atom = null) {
     // อะตอมที่เพิ่งสร้างถูกเลือกทันที จะได้กดปุ่มประจุต่อได้เลย
     selection = atom ? { kind: 'atom', atom } : { kind: 'element', el };
@@ -156,6 +171,7 @@ const interaction = new Interaction(app);
 
 function clearAll() {
   interaction.clear();
+  views.hideLattice();
   flyers.clear();
   sys.clear();
   selection = null;
@@ -217,7 +233,11 @@ function updateInfo(force = false) {
   infoDirty = false;
   let d = null;
   if (selection?.kind === 'element') d = describeElement(selection.el);
-  else if (selection?.kind === 'atom' && !selection.atom.removed) d = describeMolecule(sys, selection.atom);
+  else if (selection?.kind === 'atom' && !selection.atom.removed) {
+    const comp = new Set(sys.componentOf(selection.atom).atoms);
+    const hbondCount = views.hbonds.filter((hb) => comp.has(hb.h) || comp.has(hb.acceptor)).length;
+    d = describeMolecule(sys, selection.atom, { hbondCount, cluster: clusterOf(selection.atom) });
+  }
   $('info-body').innerHTML = renderInfoHTML(d);
   if (infoCard.mesh.visible) infoCard.draw(d, challenge.active ? challenge.text(t) : '');
 }
@@ -233,10 +253,60 @@ function changeCharge(delta) {
   infoDirty = true;
 }
 
+let lastEnergy = null;
 function celebrate(center, entry, pretty) {
   views.burst(center);
   const name = getLang() === 'th' ? entry.th : entry.en;
-  toast(`✨ ${name} · ${pretty}`);
+  // ถ้าเพิ่งเกิดพันธะ แสดงพลังงานที่ปล่อยออกมาด้วย
+  const energy = lastEnergy && performance.now() - lastEnergy.time < 1500 ? `  ${lastEnergy.text}` : '';
+  toast(`✨ ${name} · ${pretty}${energy}`);
+}
+
+/** กลุ่มไอออน (เกลือ) ที่อะตอมนี้อยู่ */
+function clusterOf(atom) {
+  for (const c of views.clusters.values()) {
+    if (c.data.members.some((m) => m.comp.atoms.includes(atom))) return c.data;
+  }
+  return null;
+}
+
+/** เปิด/ปิดโครงผลึกของสารไอออนิกที่เลือก */
+function toggleLattice() {
+  const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
+  let groups = null;
+  let title = '';
+  if (atom) {
+    const cl = clusterOf(atom);
+    if (cl) { groups = cl.ionGroups; title = cl.pretty; } else {
+      const info = analyze(sys.componentOf(atom));
+      if (info.ionic && info.complete) { groups = info.ionGroups; title = info.pretty; }
+    }
+  }
+  const lat = latticeFor(groups);
+  if (!lat) {
+    if (views.lattice) views.hideLattice(); else toast(t('noLattice'));
+    return;
+  }
+  if (views.lattice?.key === title) { views.hideLattice(); return; }
+  views.showLattice({ ...lat, title }, new THREE.Vector3(-0.26, 0.07, 0.06));
+  infoDirty = true;
+}
+
+/** ทำสำเนาโมเลกุลที่เลือก วางข้าง ๆ (ใช้ดูพันธะไฮโดรเจนระหว่างโมเลกุล) */
+function duplicateSelection() {
+  const atom = selection?.kind === 'atom' && !selection.atom.removed ? selection.atom : null;
+  if (!atom) { toast(t('selectAtomFirst')); return; }
+  const comp = sys.componentOf(atom);
+  const box = new THREE.Box3();
+  comp.atoms.forEach((a) => box.expandByPoint(a.pos));
+  const shift = new THREE.Vector3(box.max.x - box.min.x + 0.07, 0, 0.02);
+  const map = new Map();
+  for (const a of comp.atoms) map.set(a, sys.addAtom(a.el, a.pos.clone().add(shift)));
+  for (const b of comp.bonds) sys.addBond(map.get(b.a), map.get(b.b));
+  for (const a of comp.atoms) {
+    for (let k = 0; k < Math.abs(a.userCharge); k++) sys.addCharge(map.get(a), Math.sign(a.userCharge));
+  }
+  sfx.spawn();
 }
 
 function checkChallenge(entries) {
@@ -287,6 +357,14 @@ $('btn-clear').onclick = () => app.onButton('clear');
 $('btn-challenge').onclick = () => app.onButton('challenge');
 $('btn-lp').onclick = () => app.onButton('lonepairs');
 $('btn-plus').onclick = () => app.onButton('chargePlus');
+// ปุ่มในการ์ดข้อมูล (ดูโครงผลึก / ทำสำเนา)
+$('info-body').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  sfx.click();
+  if (btn.dataset.action === 'lattice') toggleLattice();
+  else if (btn.dataset.action === 'duplicate') duplicateSelection();
+});
 $('btn-minus').onclick = () => app.onButton('chargeMinus');
 $('btn-lang').onclick = () => app.onButton('lang');
 $('btn-skip').onclick = () => { challenge.skip(); updateChallengeUI(); };
@@ -648,6 +726,7 @@ function animate() {
   }
 
   relax(sys);
+  attractHydrogenBonds(views.hbonds);
   keepInFrontOfPanel();
   if (views.sync()) onStructureChanged();
 

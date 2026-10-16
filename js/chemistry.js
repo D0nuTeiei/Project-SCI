@@ -15,6 +15,8 @@ export class Atom {
     this.removed = false;
     this.lpDirs = []; // ทิศของอิเล็กตรอนคู่โดดเดี่ยว (ใช้ในฟิสิกส์ VSEPR)
     this.charge = 0; // ประจุฟอร์มอลที่ระบบคำนวณให้
+    this.partialCharge = 0; // ประจุหลังเฉลี่ยเรโซแนนซ์ (เช่น −⅔ ใน CO₃²⁻)
+    this.displayCharge = 0; // ประจุที่แสดงบนอะตอม (รวมประจุไอออนในสารประกอบไอออนิก)
     this.userCharge = 0; // ประจุที่ผู้ใช้เติม/ดึงอิเล็กตรอน (ผลรวมทั้งโมเลกุล = ประจุสุทธิ)
   }
   get valences() { return valencesFor(this.el, this.charge); }
@@ -50,8 +52,10 @@ export class Bond {
     this.a = a;
     this.b = b;
     this.order = 1;
+    this.resonance = null; // อันดับพันธะเฉลี่ยจากเรโซแนนซ์ (เช่น 1.5) หรือ null
   }
   other(x) { return x === this.a ? this.b : this.a; }
+  get effectiveOrder() { return this.resonance ?? this.order; }
 }
 
 /**
@@ -262,6 +266,8 @@ export class ChemSystem {
     const comp = this.componentOf(atom);
     const q = comp.atoms.reduce((s, a) => s + a.userCharge, 0);
     solveCharges(comp.atoms, comp.bonds, q);
+    detectResonance(comp.atoms, comp.bonds);
+    assignDisplayCharges(comp.atoms);
   }
 
   componentOf(atom) {
@@ -349,14 +355,16 @@ export function analyze(comp) {
     shape: central ? shapeOf(central) : null,
     ionic,
     ions: ionic ? ionBreakdown(comp) : null,
+    ionGroups: ionic ? ionList(comp) : null,
+    resonance: comp.bonds.filter((b) => b.resonance != null),
     formal: comp.atoms.filter((a) => a.charge !== 0 && !single),
     radical: !!entry?.radical,
     single,
   };
 }
 
-/** แยกสารประกอบไอออนิกออกเป็นไอออน เช่น CaCO₃ → Ca²⁺ + CO₃²⁻ */
-export function ionBreakdown(comp) {
+/** แยกสารประกอบไอออนิกออกเป็นไอออน — คืนค่า [{ hill, pretty, q, n, symbol }] (symbol = ไอออนอะตอมเดี่ยว) */
+export function ionList(comp) {
   const ionicBonds = new Set(comp.bonds.filter((b) => bondTypeOf(b) === 'ionic'));
   const seen = new Set();
   const groups = new Map();
@@ -382,11 +390,130 @@ export function ionBreakdown(comp) {
     }
     const counts = {};
     frag.forEach((a) => { counts[a.el.symbol] = (counts[a.el.symbol] || 0) + 1; });
-    const name = prettyFormula(hillFormula(counts)) + chargeSuffix(q);
-    groups.set(name, (groups.get(name) || 0) + 1);
+    const hill = hillFormula(counts);
+    const key = `${hill}|${q}`;
+    if (!groups.has(key)) groups.set(key, { hill, q, n: 0, pretty: prettyFormula(hill) + chargeSuffix(q), symbol: frag.length === 1 ? frag[0].el.symbol : null });
+    groups.get(key).n++;
   }
-  return [...groups].sort((x, y) => (x[0].includes('⁺') ? -1 : 1) - (y[0].includes('⁺') ? -1 : 1))
-    .map(([name, n]) => (n > 1 ? `${n} ${name}` : name)).join(' + ');
+  return [...groups.values()].sort((x, y) => y.q - x.q);
+}
+
+export function formatIons(list) {
+  return list.map((g) => (g.n > 1 ? `${g.n} ${g.pretty}` : g.pretty)).join(' + ');
+}
+
+export function ionBreakdown(comp) {
+  return formatIons(ionList(comp));
+}
+
+/**
+ * เรโซแนนซ์: (1) อะตอมปลายชนิดเดียวกันที่ต่อกับอะตอมกลางด้วยอันดับพันธะต่างกัน (CO₃²⁻, NO₃⁻, O₃, SO₄²⁻, COO⁻)
+ * (2) วงหกเหลี่ยมที่พันธะเดี่ยวสลับพันธะคู่ (เบนซีน) — กำหนดอันดับพันธะเฉลี่ยและกระจายประจุฟอร์มอล
+ */
+export function detectResonance(atoms, bonds) {
+  for (const b of bonds) b.resonance = null;
+  for (const a of atoms) { a.partialCharge = a.charge; a.aromaticRing = null; }
+  for (const c of atoms) {
+    const groups = new Map();
+    for (const b of c.bonds) {
+      const t = b.other(c);
+      if (t.bonds.length !== 1 || bondTypeOf(b) === 'ionic') continue;
+      if (!groups.has(t.el.symbol)) groups.set(t.el.symbol, []);
+      groups.get(t.el.symbol).push(b);
+    }
+    for (const g of groups.values()) {
+      if (g.length < 2 || new Set(g.map((b) => b.order)).size < 2) continue;
+      const avg = g.reduce((s, b) => s + b.order, 0) / g.length;
+      g.forEach((b) => { b.resonance = avg; });
+      const ends = g.map((b) => b.other(c));
+      const q = ends.reduce((s, t) => s + t.charge, 0) / ends.length;
+      ends.forEach((t) => { t.partialCharge = q; });
+    }
+  }
+  // วงหกเหลี่ยมพันธะสลับ
+  const ring = new Set(atoms.filter((a) => a.bonds.length >= 2));
+  const seenRings = new Set();
+  for (const s0 of ring) {
+    const path = [s0];
+    const dfs = (a) => {
+      if (path.length === 6) {
+        const back = a.bondTo(s0);
+        if (!back) return;
+        const key = path.map((x) => x.id).sort((x, y) => x - y).join(',');
+        if (seenRings.has(key)) return;
+        seenRings.add(key);
+        const rb = path.map((x, i) => x.bondTo(path[(i + 1) % 6]));
+        const alt = rb.every((b, i) => b.order === (rb[0].order === 1 ? (i % 2 ? 2 : 1) : (i % 2 ? 1 : 2)));
+        if (alt) {
+          rb.forEach((b) => { b.resonance = 1.5; });
+          const members = [...path];
+          members.forEach((x) => { x.aromaticRing = members; });
+        }
+        return;
+      }
+      for (const n of a.neighbors) {
+        if (!ring.has(n) || path.includes(n) || n.id < s0.id) continue;
+        path.push(n);
+        dfs(n);
+        path.pop();
+      }
+    };
+    dfs(s0);
+  }
+}
+
+/** ประจุที่แสดงบนอะตอม: ประจุฟอร์มอล (เฉลี่ยเรโซแนนซ์) + ประจุไอออนจากพันธะไอออนิก */
+export function assignDisplayCharges(atoms) {
+  for (const a of atoms) {
+    let q = a.partialCharge;
+    for (const b of a.bonds) {
+      if (bondTypeOf(b) !== 'ionic') continue;
+      const o = b.other(a);
+      q += (a.el.en ?? 0) < (o.el.en ?? 0) ? b.order : -b.order;
+    }
+    a.displayCharge = q;
+  }
+}
+
+const HB_ATOMS = new Set(['N', 'O', 'F']);
+/**
+ * พันธะไฮโดรเจนระหว่างโมเลกุล: H ที่ต่อกับ N/O/F อยู่ใกล้ N/O/F ที่มีคู่โดดเดี่ยวของอีกโมเลกุล
+ * และมุม D–H···A กว้างกว่า minAngle — compOf: Map(atom → รหัสโมเลกุล)
+ */
+export function findHydrogenBonds(atoms, compOf, { maxDist = 0.17, minAngle = 120 } = {}) {
+  const acceptors = atoms.filter((a) => HB_ATOMS.has(a.el.symbol) && a.lonePairs() > 0);
+  const out = [];
+  for (const h of atoms) {
+    if (h.el.symbol !== 'H' || h.bonds.length !== 1) continue;
+    const d = h.bonds[0].other(h);
+    if (!HB_ATOMS.has(d.el.symbol)) continue;
+    let best = null;
+    let bestD = maxDist;
+    for (const acc of acceptors) {
+      if (compOf.get(acc) === compOf.get(h)) continue;
+      const dist = Math.hypot(acc.pos.x - h.pos.x, acc.pos.y - h.pos.y, acc.pos.z - h.pos.z);
+      if (dist >= bestD) continue;
+      // มุม D–H···A
+      const u = { x: d.pos.x - h.pos.x, y: d.pos.y - h.pos.y, z: d.pos.z - h.pos.z };
+      const v = { x: acc.pos.x - h.pos.x, y: acc.pos.y - h.pos.y, z: acc.pos.z - h.pos.z };
+      const cos = (u.x * v.x + u.y * v.y + u.z * v.z) / (Math.hypot(u.x, u.y, u.z) * dist || 1);
+      if ((Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI < minAngle) continue;
+      best = acc;
+      bestD = dist;
+    }
+    if (best) out.push({ h, donor: d, acceptor: best, dist: bestD });
+  }
+  return out;
+}
+
+/** ชนิดแรงยึดเหนี่ยวระหว่างโมเลกุลของสารนี้ */
+export function intermolecularForces(comp, info) {
+  if (info.ionic || info.charge) return ['ionic'];
+  const forces = ['london'];
+  if (info.complete && dipoleMagnitude(comp) > 0.3) forces.push('dipole');
+  const donor = comp.atoms.some((h) => h.el.symbol === 'H' && h.bonds.length === 1 && HB_ATOMS.has(h.neighbors[0].el.symbol));
+  if (donor) forces.push('hbond');
+  return forces;
 }
 
 /**
@@ -432,19 +559,26 @@ export function ionClusters(entries, maxGap = 0.12) {
     const hill = hillFormula(counts);
     const entry = findMolecule(hill, { atoms, bonds }, true, 0);
     const tally = new Map();
-    members.forEach((m) => tally.set(m.info.pretty, (tally.get(m.info.pretty) || 0) + 1));
-    const ions = [...tally].sort((x, y) => (x[0].includes('⁺') ? -1 : 1) - (y[0].includes('⁺') ? -1 : 1))
-      .map(([name, n]) => (n > 1 ? `${n} ${name}` : name)).join(' + ');
+    for (const m of members) {
+      const k = m.info.pretty;
+      if (!tally.has(k)) tally.set(k, { hill: m.info.hill, q: m.info.charge, n: 0, pretty: k, symbol: m.info.single?.el.symbol ?? null });
+      tally.get(k).n++;
+    }
+    const ionGroups = [...tally.values()].sort((x, y) => y.q - x.q);
+    const ions = formatIons(ionGroups);
     out.push({
       key: members.map((m) => m.key).sort().join('/'),
-      members, hill, entry, ions,
+      members, hill, entry, ions, ionGroups,
       pretty: prettyFormula(entry ? entry.f : hill),
     });
   }
   return out;
 }
 
-/** โมเมนต์ขั้วคู่โดยประมาณจากตำแหน่งจริง (ผลรวมเวกเตอร์ ΔEN ตามแนวพันธะ) */
+/**
+ * โมเมนต์ขั้วคู่โดยประมาณจากตำแหน่งจริง: ผลรวมเวกเตอร์ ΔEN ตามแนวพันธะ + คู่โดดเดี่ยวของอะตอมกลาง
+ * (หลักในหนังสือเรียน: โมเลกุลที่อะตอมกลางมีคู่โดดเดี่ยวจัดตัวไม่สมมาตร เช่น O₃, PH₃ มีขั้ว)
+ */
 export function dipoleMagnitude(comp) {
   let x = 0; let y = 0; let z = 0;
   for (const b of comp.bonds) {
@@ -455,7 +589,13 @@ export function dipoleMagnitude(comp) {
     const d = (eb - ea) / len; // ชี้ไปทางอะตอมที่ดึงอิเล็กตรอนมากกว่า
     x += dx * d; y += dy * d; z += dz * d;
   }
-  return Math.hypot(x, y, z);
+  // คู่โดดเดี่ยวของอะตอมกลางที่จัดตัวไม่สมมาตร (คิดแยกจากขั้วพันธะ เพื่อไม่ให้หักล้างกันเชิงตัวเลข เช่น OF₂, NF₃ ซึ่งมีขั้วจริง)
+  let lx = 0; let ly = 0; let lz = 0;
+  for (const a of comp.atoms) {
+    if (a.bonds.length < 2 || !a.lpDirs) continue;
+    for (const lp of a.lpDirs) { lx += lp.x; ly += lp.y; lz += lp.z; }
+  }
+  return Math.max(Math.hypot(x, y, z), 0.5 * Math.hypot(lx, ly, lz));
 }
 
 /**

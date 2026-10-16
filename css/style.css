@@ -164,6 +164,10 @@ button.unsupported { opacity: 0.5; }
 #info-card dd { margin: 0; }
 #info-card .desc { margin: 10px 0 0; color: #9fe8b0; font-size: 14px; }
 .muted { color: var(--muted); margin: 0; font-size: 14px; }
+.info-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.info-actions button { font-size: 14px; padding: 6px 12px; }
+#info-card dt:empty { display: none; }
+#info-card dt:empty + dd { grid-column: 1 / -1; color: #ffe9a8; }
 
 #toast {
   position: absolute;

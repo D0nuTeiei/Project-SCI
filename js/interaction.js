@@ -1,6 +1,7 @@
 // ระบบจับ–ลาก–สร้างพันธะ ที่ใช้ร่วมกันทุกอุปกรณ์ (เมาส์, ทัช, คอนโทรลเลอร์ XR, มือ XR, จอมือถือใน AR)
 import * as THREE from 'three';
 import { atomRadius, isOverstretched } from './physics.js';
+import { moleculeBondEnergy } from './energy.js';
 
 const SNAP = 0.03; // ระยะห่างระหว่างผิวอะตอมที่จะเกิดพันธะ (เมตร)
 const RECYCLE_RADIUS = 0.075;
@@ -91,7 +92,9 @@ export class Interaction {
       const atom = hit.atom;
       if (this.lastTap.atom === atom && now - this.lastTap.time < DOUBLE_TAP_MS) {
         this.lastTap.atom = null;
-        if (app.sys.detach(atom)) app.onDetach(atom);
+        const group = app.sys.componentOf(atom).atoms;
+        const before = this.energyAround(group);
+        if (app.sys.detach(atom)) app.onDetach(atom, before - this.energyAround(group));
       } else this.lastTap = { atom, time: now };
       app.onSelectAtom(atom);
       this.startAtomGrab(p, L, atom, hit.near, p.shift);
@@ -193,22 +196,43 @@ export class Interaction {
     }
 
     if (g.mode === 'single') {
-      let broke = false;
-      for (const b of [...g.atom.bonds]) {
-        if (isOverstretched(b)) { sys.removeBond(b); broke = true; }
+      const stretched = g.atom.bonds.filter(isOverstretched);
+      if (stretched.length) {
+        const ends = stretched.map((b) => b.other(g.atom));
+        const before = this.energyAround([g.atom]);
+        stretched.forEach((b) => sys.removeBond(b));
+        app.onBreak(g.atom, before - this.energyAround([g.atom, ...ends]));
+        p.haptic?.(0.7, 50);
       }
-      if (broke) { app.onBreak(g.atom); p.haptic?.(0.7, 50); }
     }
 
     const c = g.candidate;
     if (c && !c.a.removed && !c.b.removed && sys.canBond(c.a, c.b)) {
+      const before = this.energyAround([c.a, c.b]);
       sys.addBond(c.a, c.b);
-      app.onBond(c.a, c.b);
+      app.onBond(c.a, c.b, this.energyAround([c.a]) - before);
       p.haptic?.(0.8, 40);
     } else if (g.spawned && g.moved < 0.01) {
       // แตะธาตุเฉย ๆ (ไม่ได้ลาก) → ส่งอะตอมไปวางบนโต๊ะทำงาน
       app.flyToWorkspace(g.atom);
     }
+  }
+
+  /**
+   * ผลรวมพลังงานพันธะของโมเลกุลที่มีอะตอมเหล่านี้อยู่ (kJ/mol) หรือ NaN ถ้ามีพันธะที่ไม่มีข้อมูล
+   * ใช้หาพลังงานที่ปล่อย/ดูดเมื่อเกิดหรือสลายพันธะ (รวมผลที่อันดับพันธะเปลี่ยน เช่น O=O → O–O–H)
+   */
+  energyAround(atoms) {
+    const bonds = new Set();
+    const seen = new Set();
+    for (const a of atoms) {
+      if (a.removed || seen.has(a)) continue;
+      const comp = this.app.sys.componentOf(a);
+      comp.atoms.forEach((x) => seen.add(x));
+      comp.bonds.forEach((b) => bonds.add(b));
+    }
+    const e = moleculeBondEnergy([...bonds]);
+    return e.missing ? NaN : e.total;
   }
 
   cancel(id) {

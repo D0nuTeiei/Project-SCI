@@ -29,6 +29,7 @@ const BUTTONS = [
   { id: 'lang', x: 1012, w: 200, label: () => (getLang() === 'th' ? 'TH → EN' : 'EN → TH') },
   { id: 'chargePlus', x: 1228, w: 190, label: () => '⊕ ' + t('chargePlus') },
   { id: 'chargeMinus', x: 1434, w: 190, label: () => '⊖ ' + t('chargeMinus') },
+  { id: 'lattice', x: 1640, w: 374, label: () => '🔷 ' + t('lattice') },
 ];
 const BTN_Y = FOOT_Y;
 const BTN_H = 84;

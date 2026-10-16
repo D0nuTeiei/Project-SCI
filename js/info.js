@@ -1,7 +1,9 @@
 // สร้างข้อมูลสำหรับการ์ดข้อมูล (HTML และการ์ด 3D ใน XR)
 import * as THREE from 'three';
 import { CATEGORIES, elementName } from './elements.js';
-import { analyze, dipoleMagnitude, shapeOf, suggestCharge } from './chemistry.js';
+import { analyze, dipoleMagnitude, shapeOf, suggestCharge, intermolecularForces, bondTypeOf } from './chemistry.js';
+import { moleculeBondEnergy } from './energy.js';
+import { latticeFor } from './lattice.js';
 import { chargeSuffix } from './molecules.js';
 import { FONT, roundRect } from './textures.js';
 import { t, getLang } from './i18n.js';
@@ -33,7 +35,18 @@ export function describeElement(el) {
   };
 }
 
-export function describeMolecule(sys, atom) {
+const FRACTIONS = [[1, '1'], [1.25, '1¼'], [4 / 3, '1⅓'], [1.5, '1½'], [5 / 3, '1⅔'], [1.75, '1¾'], [2, '2']];
+const fmtOrder = (o) => (FRACTIONS.find(([v]) => Math.abs(v - o) < 1e-3)?.[1] ?? o.toFixed(2));
+
+/** ปุ่มดูโครงผลึก (ถ้ามีแบบจำลอง) */
+function latticeAction(ionGroups) {
+  return latticeFor(ionGroups) ? [{ id: 'lattice', label: t('showLattice') }] : [];
+}
+
+/**
+ * ctx: { hbondCount: จำนวนพันธะไฮโดรเจนของโมเลกุลนี้ในฉาก, cluster: กลุ่มไอออนที่อะตอมนี้อยู่ (ถ้ามี) }
+ */
+export function describeMolecule(sys, atom, ctx = {}) {
   const lang = getLang();
   const comp = sys.componentOf(atom);
   const info = analyze(comp);
@@ -53,29 +66,62 @@ export function describeMolecule(sys, atom) {
     }
     if (!info.complete) {
       const q = suggestCharge(comp);
-      if (q) d.rows.unshift([t('hint'), `${t('hintCharge', q - info.charge)} → ${atom.el.symbol}${chargeSuffix(q)}`]);
+      if (q) d.rows.unshift([t('hintRow'), `${t('hintCharge', q - info.charge)} → ${atom.el.symbol}${chargeSuffix(q)}`]);
     }
+    d.actions = [];
+    if (ctx.cluster) clusterRows(d, ctx.cluster, lang);
     return d;
   }
+  // สารไอออนิก: ใช้ "มวลสูตร" และไม่นับ "พันธะ" แบบโมเลกุล (กันความเข้าใจผิดว่าเป็นโมเลกุล)
+  const ionicOnly = info.ionic && comp.bonds.every((b) => bondTypeOf(b) === 'ionic');
   const rows = [
-    [t('molarMass'), `${info.mass.toFixed(2)} g/mol`],
+    [ionicOnly ? t('formulaMass') : t('molarMass'), `${info.mass.toFixed(2)} g/mol`],
     [t('atoms'), comp.atoms.length],
   ];
   const [s, d2, tr] = info.bondCounts;
-  rows.push([t('bonds'), [s && `${t('single')} ${s}`, d2 && `${t('double')} ${d2}`, tr && `${t('triple')} ${tr}`].filter(Boolean).join(', ')]);
+  if (!ionicOnly) {
+    const list = [s && `${t('single')} ${s}`, d2 && `${t('double')} ${d2}`, tr && `${t('triple')} ${tr}`].filter(Boolean).join(', ');
+    rows.push([t('bonds'), info.resonance.length ? `${list} ${t('oneLewis')}` : list]);
+  }
   if (info.central) {
     const shape = shapeOf(info.central);
     if (shape) rows.push([t('shape'), `${lang === 'th' ? shape.th : shape.en} (${shape.angle}) · ${t('around')} ${info.central.el.symbol}`]);
   }
-  rows.push([t('bondType'), info.ionic ? t('ionic') : t('covalent')]);
+  rows.push([t('bondType'), ionicOnly ? t('ionic') : info.ionic ? `${t('ionic')} + ${t('covalent')}` : t('covalent')]);
   if (info.charge) rows.unshift([t('netCharge'), chargeText(info.charge)]);
   if (info.ions) rows.push([t('ions'), info.ions]);
-  if (info.formal.length) rows.push([t('formalCharges'), info.formal.map((a) => a.el.symbol + chargeSuffix(a.charge)).join(', ')]);
+  // ประจุฟอร์มอลหลังเฉลี่ยเรโซแนนซ์ (เช่น O₃: O⁺ กลาง, O ปลายละ −½)
+  const charged = comp.atoms.filter((a) => Math.abs(a.partialCharge) > 1e-6);
+  if (charged.length && !info.single) rows.push([t('formalCharges'), charged.map((a) => `${a.el.symbol}(${fracCharge(a.partialCharge)})`).join(', ')]);
   if (info.radical) rows.unshift([t('status'), t('radicalNote')]);
   if (info.complete && !info.ionic && !info.charge) rows.push([t('polarity'), dipoleMagnitude(comp) > 0.3 ? t('polar') : t('nonpolar')]);
+  // เรโซแนนซ์: รวมพันธะที่อันดับพันธะเฉลี่ยเท่ากัน
+  const resGroups = new Map();
+  for (const b of info.resonance) {
+    const pair = [b.a.el.symbol, b.b.el.symbol].sort().join('–');
+    const k = `${pair}|${b.resonance.toFixed(3)}`;
+    resGroups.set(k, { pair, order: b.resonance, n: (resGroups.get(k)?.n || 0) + 1 });
+  }
+  for (const g of resGroups.values()) rows.push([t('resonanceRow'), t('resonanceNote', g.pair, g.n, fmtOrder(g.order))]);
+  if (info.ionic && info.complete) rows.push([t('ionicNoteRow'), t('ionicNote')]);
+  if (info.complete) {
+    const forces = intermolecularForces(comp, info);
+    const names = t('imf');
+    rows.push([forces[0] === 'ionic' ? t('crystalForceRow') : t('imfRow'), forces.map((f) => names[f]).join(', ')]);
+    if (forces.includes('hbond')) rows.push(['', t('boilNote')]);
+  }
+  if (info.entry?.bp !== undefined) {
+    const bp = String(info.entry.bp);
+    rows.push([t('bpRow'), `${bp.replace('*', '').replace('-', '−')} °C${bp.endsWith('*') ? ' (ระเหิด)' : ''}`]);
+  }
+  if (ctx.hbondCount) rows.push(['', t('hbondsInScene', ctx.hbondCount)]);
+  if (!info.ionic) {
+    const en = moleculeBondEnergy(comp.bonds);
+    if (en.missing === 0 && en.total > 0) rows.push([t('energyRow'), t('energyNote', en.total)]);
+  }
   if (!info.complete) {
     const q = suggestCharge(comp);
-    if (q) rows.unshift([t('hint'), t('hintCharge', q - info.charge)]);
+    if (q) rows.unshift([t('hintRow'), t('hintCharge', q - info.charge)]);
   }
   if (!info.complete && !info.radical) {
     const missing = comp.atoms.filter((a) => a.missingBonds() > 0).map((a) => t('missingAt', a.el.symbol, a.missingBonds()));
@@ -91,7 +137,27 @@ export function describeMolecule(sys, atom) {
     subtitle: e ? `${info.pretty} · ${lang === 'th' ? e.en : e.th}` : info.complete ? t('completeUnknown') : t('incomplete'),
     rows,
     desc: e ? (lang === 'th' ? e.dTh : e.dEn) : '',
+    actions: [
+      ...(info.ionic && info.complete ? latticeAction(info.ionGroups) : []),
+      { id: 'duplicate', label: t('duplicate') },
+    ],
   };
+}
+
+/** แถวข้อมูลเมื่อไอออนวางอยู่ในกลุ่มเกลือ */
+function clusterRows(d, cluster, lang) {
+  const name = cluster.entry ? `${lang === 'th' ? cluster.entry.th : cluster.entry.en} · ${cluster.pretty}` : cluster.pretty;
+  d.rows.unshift([t('ions'), `${cluster.ions} → ${name}`]);
+  d.rows.push([t('ionicNoteRow'), t('ionicNote')]);
+  d.actions.push(...latticeAction(cluster.ionGroups));
+}
+
+function fracCharge(q) {
+  const sign = q > 0 ? '+' : '−';
+  const a = Math.abs(q);
+  const FR = [[1 / 3, '⅓'], [2 / 3, '⅔'], [0.5, '½'], [0.25, '¼'], [0.75, '¾']];
+  const f = FR.find(([v]) => Math.abs(v - a) < 1e-3);
+  return sign + (f ? f[1] : Number.isInteger(+a.toFixed(6)) ? String(Math.round(a)) : a.toFixed(2));
 }
 
 function chargeText(q) {
@@ -106,7 +172,8 @@ export function renderInfoHTML(d) {
       <div><h2>${esc(d.title)}</h2><p>${esc(d.subtitle)}</p></div>
     </div>
     <dl>${d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-    ${d.desc ? `<p class="desc">${esc(d.desc)}</p>` : ''}`;
+    ${d.desc ? `<p class="desc">${esc(d.desc)}</p>` : ''}
+    ${d.actions?.length ? `<div class="info-actions">${d.actions.map((a) => `<button data-action="${a.id}">${esc(a.label)}</button>`).join('')}</div>` : ''}`;
 }
 
 /** การ์ดข้อมูลแบบ 3D สำหรับแว่น VR/AR ที่ไม่มี DOM overlay */

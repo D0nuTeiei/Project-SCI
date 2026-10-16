@@ -314,12 +314,26 @@ export function prettyFormula(f) {
   return f.replace(/\d/g, (d) => SUB[Number(d)]);
 }
 
+// จุดเดือด (°C ที่ 1 atm) จากคู่มือข้อมูลเคมีทั่วไป — ใช้เชื่อมชนิดแรงระหว่างโมเลกุลกับสมบัติจริง (* = ระเหิด)
+const BOILING = {
+  H2: -253, O2: -183, N2: -196, F2: -188, Cl2: -34, Br2: 59, I2: 184, H2O: 100, H2O2: 150, NH3: -33, CH4: -162,
+  HF: 20, HCl: -85, HBr: -67, HI: -35, H2S: -60, PH3: -88, CO2: '-78*', CO: -191, SO2: -10, O3: -112,
+  'N2O': -88, NO: -152, NO2: 21, CS2: 46, SiH4: -112, BF3: -100, SF6: '-64*', PCl3: 76, NF3: -129, OF2: -145,
+  COCl2: 8, SiCl4: 58, HNO3: 83, H2SO4: 337, HCN: 26, CCl4: 77, CHCl3: 61, CH2Cl2: 40, CH3Cl: -24,
+  CH3OH: 65, C2H5OH: 78, CH3OCH3: -24, CH2O: -19, HCOOH: 101, CH3COOH: 118, CH3COCH3: 56, CH3CHO: 20,
+  C2H6: -89, C2H4: -104, C2H2: '-84*', C3H8: -42, C4H10: -1, isobutane: -12, C5H12: 36, 'CH3CH(CH3)CH2CH3': 28,
+  'C(CH3)4': 10, C6H14: 69, C8H18: 126, C3H6: -48, C6H12: 81, C6H6: 80, C6H5CH3: 111, C3H7OH: 97,
+  '(CH3)2CHOH': 82, HOCH2CH2OH: 197, 'C3H5(OH)3': 290, C6H5OH: 182, CH3COOC2H5: 77, CH3COOCH3: 57, CH3NH2: -6,
+  NaCl: 1465, KCl: 1420, MgO: 3600, CaO: 2850, LiF: 1676, NaF: 1704,
+};
+
 const keyOf = (hill, q) => (q ? `${hill}[${q}]` : hill);
 const INDEX = new Map();
 for (const m of MOLECULES) {
   m.q = m.q || 0;
   m.key = keyOf(hillFormula(parseFormula(m.f)), m.q);
   m.id = m.id || (m.q ? `${m.f}${m.q > 0 ? '+' : ''}${m.q}` : m.f);
+  if (BOILING[m.id] !== undefined) m.bp = BOILING[m.id];
   if (!INDEX.has(m.key)) INDEX.set(m.key, []);
   INDEX.get(m.key).push(m);
 }

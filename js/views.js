@@ -1,7 +1,10 @@
 // การแสดงผลอะตอม พันธะ ป้ายชื่อโมเลกุล และเอฟเฟกต์
 import * as THREE from 'three';
 import { atomRadius, isOverstretched } from './physics.js';
-import { analyze, bondTypeOf, suggestCharge, ionClusters } from './chemistry.js';
+import { analyze, bondTypeOf, suggestCharge, ionClusters, findHydrogenBonds } from './chemistry.js';
+import { bondEnergy } from './energy.js';
+import { latticeSites } from './lattice.js';
+import { BY_SYMBOL } from './elements.js';
 import { chargeSuffix } from './molecules.js';
 import { elementName } from './elements.js';
 import { TextSprite } from './textures.js';
@@ -20,6 +23,7 @@ const bondMats = {
   stretch: new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.35, emissive: 0x552200 }),
   preview: new THREE.MeshBasicMaterial({ color: 0x4dff9a, transparent: true, opacity: 0.55 }),
 };
+const hbMat = new THREE.MeshBasicMaterial({ color: 0xffe066, toneMapped: false });
 const lpMat = new THREE.MeshBasicMaterial({ color: 0xffd84d, toneMapped: false });
 
 const METALLIC = new Set(['alkali', 'alkaline', 'transition', 'post-transition', 'lanthanide', 'actinide']);
@@ -58,7 +62,7 @@ class AtomView {
     this.badge = null; // ป้ายประจุฟอร์มอล (สร้างเมื่อมีประจุ)
   }
   setCharge(q, parent) {
-    if (!q) {
+    if (Math.abs(q) < 1e-6) {
       if (this.badge) this.badge.visible = false;
       return;
     }
@@ -70,7 +74,7 @@ class AtomView {
     this.badge.visible = true;
     // ประจุบวกสีน้ำเงิน ประจุลบสีแดง (ตามแผนที่ศักย์ไฟฟ้า)
     this.badge.background = q > 0 ? 'rgba(40, 110, 230, 0.92)' : 'rgba(220, 50, 60, 0.92)';
-    this.badge.setLines([{ text: (Math.abs(q) > 1 ? Math.abs(q) : '') + (q > 0 ? '+' : '−'), size: 40, weight: 700 }]);
+    this.badge.setLines([{ text: chargeLabel(q), size: 40, weight: 700 }]);
   }
   dispose() {
     this.group.removeFromParent();
@@ -78,6 +82,17 @@ class AtomView {
   }
 }
 
+/** ประจุแบบอ่านง่าย รองรับเศษส่วนจากเรโซแนนซ์ เช่น ⅔− */
+export function chargeLabel(q) {
+  const sign = q > 0 ? '+' : '−';
+  const a = Math.abs(q);
+  if (Math.abs(a - Math.round(a)) < 1e-6) return (Math.round(a) > 1 ? Math.round(a) : '') + sign;
+  const FR = [[1 / 3, '⅓'], [2 / 3, '⅔'], [0.5, '½'], [0.25, '¼'], [0.75, '¾'], [1.5, '1½'], [4 / 3, '1⅓']];
+  const f = FR.find(([v]) => Math.abs(v - a) < 1e-3);
+  return (f ? f[1] : a.toFixed(2)) + sign;
+}
+
+const DASHES = 6;
 class BondView {
   constructor(bond, parent) {
     this.bond = bond;
@@ -87,8 +102,27 @@ class BondView {
       this.group.add(m);
       return m;
     });
+    this.dashes = null; // ชิ้นส่วนเส้นประ (พันธะไอออนิก / เรโซแนนซ์)
     parent.add(this.group);
   }
+  /** วาดเส้นประจาก p ไป q */
+  placeDashes(p, q, radius, mat) {
+    if (!this.dashes) {
+      this.dashes = Array.from({ length: DASHES }, () => {
+        const m = new THREE.Mesh(CYL, mat);
+        this.group.add(m);
+        return m;
+      });
+    }
+    for (let i = 0; i < DASHES; i++) {
+      const m = this.dashes[i];
+      m.material = mat;
+      const t0 = (i + 0.2) / DASHES;
+      const t1 = (i + 0.75) / DASHES;
+      placeRod(m, p.clone().lerp(q, t0), p.clone().lerp(q, t1), radius);
+    }
+  }
+  hideDashes() { this.dashes?.forEach((m) => { m.visible = false; }); }
   dispose() { this.group.removeFromParent(); }
 }
 
@@ -130,6 +164,7 @@ export function labelLines(info) {
   if (info.entry) {
     const name = lang === 'th' ? info.entry.th : info.entry.en;
     const lines = [{ text: `${name} · ${info.pretty}`, size: 46, color: '#ffffff' }];
+    if (info.ionic && info.complete) lines.push({ text: `${t('formulaUnit')} · ${info.ions}`, size: 28, color: '#d9c4ff' });
     if (info.radical) lines.push({ text: `${t('incomplete')} · ${t('radicalNote')}`, size: 28, color: '#ffcf8a' });
     return lines;
   }
@@ -205,6 +240,13 @@ export class MoleculeViews {
     this.preview = new THREE.Mesh(CYL, bondMats.preview);
     this.preview.visible = false;
     this.root.add(this.preview);
+    this.energyLabel = new TextSprite([], { worldHeightPerPx: 0.00024 });
+    this.energyLabel.visible = false;
+    this.root.add(this.energyLabel);
+    this.hbonds = [];
+    this.hbTimer = 1;
+    this.hbDashes = [];
+    this.lattice = null;
   }
 
   /** ซิงก์ mesh กับโมเดล — คืนค่า true ถ้าโครงสร้างเปลี่ยน */
@@ -240,7 +282,7 @@ export class MoleculeViews {
     }
     for (const [key, e] of this.labels) if (!next.has(key)) { e.sprite.removeFromParent(); e.sprite.dispose(); }
     this.labels = next;
-    for (const [atom, v] of this.atomViews) v.setCharge(atom.charge, this.root);
+    for (const [atom, v] of this.atomViews) v.setCharge(atom.displayCharge, this.root);
     this.clusterTimer = 1; // คำนวณกลุ่มไอออนใหม่ในเฟรมถัดไป
     for (const c of this.clusters.values()) c.sprite.key = '';
     return structural;
@@ -322,17 +364,46 @@ export class MoleculeViews {
       }
     }
 
+    let stretchShown = false;
     for (const [bond, v] of this.bondViews) {
       _a.copy(bond.a.pos);
       _b.copy(bond.b.pos);
       const stretched = isOverstretched(bond);
-      const mat = stretched ? bondMats.stretch : bondTypeOf(bond) === 'ionic' ? bondMats.ionic : bondMats.normal;
+      const ionic = bondTypeOf(bond) === 'ionic';
+      const mat = stretched ? bondMats.stretch : ionic ? bondMats.ionic : bondMats.normal;
+      if (stretched && !stretchShown) {
+        // บอกพลังงานที่ต้องใช้สลายพันธะ (การสลายพันธะดูดพลังงาน ไม่ได้ปล่อยพลังงาน)
+        const e = bondEnergy(bond);
+        if (e != null) {
+          stretchShown = true;
+          this.energyLabel.setLines([{ text: t('breakCost', e), size: 34, color: '#ffd59a' }]);
+          this.energyLabel.position.addVectors(_a, _b).multiplyScalar(0.5);
+          this.energyLabel.position.y += 0.02;
+        }
+      }
       // ทิศตั้งฉากกับแนวพันธะและทิศมองของกล้อง เพื่อให้เห็นพันธะคู่/สามชัดเจน
       _dir.subVectors(_b, _a).normalize();
       _view.subVectors(state.cameraLocal, _mid.addVectors(_a, _b).multiplyScalar(0.5)).normalize();
       _perp.crossVectors(_dir, _view);
       if (_perp.lengthSq() < 1e-6) _perp.set(1, 0, 0);
       _perp.normalize();
+      if (ionic && !stretched) {
+        // พันธะไอออนิก = แรงดึงดูดไฟฟ้าระหว่างไอออน (เส้นประ) ไม่ใช่แท่งพันธะแบบใช้อิเล็กตรอนร่วมกัน
+        v.rods.forEach((r) => { r.visible = false; });
+        v.placeDashes(_a, _b, 0.003, bondMats.ionic);
+        continue;
+      }
+      if (bond.resonance != null && !stretched) {
+        // เรโซแนนซ์: เส้นทึบหนึ่งเส้น + เส้นประ (อิเล็กตรอนกระจายตัว) ทุกพันธะเหมือนกัน
+        const off = 0.0034;
+        placeRod(v.rods[0], _a.clone().addScaledVector(_perp, -off), _b.clone().addScaledVector(_perp, -off), 0.0036);
+        v.rods[0].material = bondMats.normal;
+        v.rods[1].visible = false;
+        v.rods[2].visible = false;
+        v.placeDashes(_a.clone().addScaledVector(_perp, off), _b.clone().addScaledVector(_perp, off), 0.0026, bondMats.normal);
+        continue;
+      }
+      v.hideDashes();
       const n = bond.order;
       const radius = n === 1 ? 0.0045 : n === 2 ? 0.0034 : 0.0028;
       const spacing = n === 2 ? 0.0068 : 0.0085;
@@ -346,6 +417,41 @@ export class MoleculeViews {
         placeRod(rod, p, q, radius);
       }
     }
+
+    this.energyLabel.visible = stretchShown;
+
+    // พันธะไฮโดรเจนระหว่างโมเลกุล (เส้นจุดสีเหลือง)
+    this.hbTimer += dt;
+    if (this.hbTimer > 0.2) {
+      this.hbTimer = 0;
+      const compOf = new Map();
+      this.analyses.forEach((e, i) => e.comp.atoms.forEach((a) => compOf.set(a, i)));
+      this.hbonds = findHydrogenBonds(this.sys.atoms.filter((a) => !a.removed), compOf);
+    }
+    this.hbonds = this.hbonds.filter((hb) => !hb.h.removed && !hb.acceptor.removed);
+    // วาดเป็นขีดสั้น ๆ สีเหลือง (เส้น WebGL หนาแค่ 1 พิกเซล มองเห็นยากในแว่น)
+    const need = this.hbonds.length * 4;
+    while (this.hbDashes.length < need) {
+      const m = new THREE.Mesh(CYL, hbMat);
+      this.root.add(m);
+      this.hbDashes.push(m);
+    }
+    this.hbDashes.forEach((m, i) => { m.visible = i < need; });
+    this.hbonds.forEach((hb, k) => {
+      // เว้นช่วงที่ถูกลูกบอลอะตอมบังไว้
+      const p = hb.h.pos; const q = hb.acceptor.pos;
+      const len = p.distanceTo(q) || 1;
+      const t0 = Math.min(0.45, atomRadius(hb.h.el) / len);
+      const t1 = Math.max(0.55, 1 - atomRadius(hb.acceptor.el) / len);
+      for (let i = 0; i < 4; i++) {
+        const a0 = t0 + ((t1 - t0) * (i + 0.15)) / 4;
+        const a1 = t0 + ((t1 - t0) * (i + 0.7)) / 4;
+        placeRod(this.hbDashes[k * 4 + i], p.clone().lerp(q, a0), p.clone().lerp(q, a1), 0.0022);
+      }
+    });
+
+    // โครงผลึกที่เปิดดูอยู่
+    if (this.lattice) this.lattice.group.rotation.y += dt * 0.35;
 
     // เส้นพรีวิวพันธะที่กำลังจะเกิด
     if (state.preview) {
@@ -406,6 +512,61 @@ export class MoleculeViews {
       if (!alive) b.dispose();
       return alive;
     });
+  }
+
+  /** เปิดโครงผลึก (lat จาก latticeFor) ที่ตำแหน่งท้องถิ่น pos */
+  showLattice(lat, pos) {
+    this.hideLattice();
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    const { sites, center, neighbors } = latticeSites(lat.type);
+    // ระยะไอออนบวก–ลบที่ใกล้ที่สุดเท่ากันทุกแบบ (0.034 ม.)
+    const c0 = sites[center];
+    const nearest = Math.hypot(...c0.p.map((v, i) => v - sites[neighbors[0]].p[i]));
+    const unit = 0.034 / nearest;
+    const sum = lat.cation.radius + lat.anion.radius;
+    const colorOf = (ion) => {
+      const sym = ion.symbol || (ion.hill === 'H4N' ? 'N' : 'C');
+      return new THREE.Color(BY_SYMBOL[sym]?.color || '#cccccc');
+    };
+    const mats = {
+      cation: new THREE.MeshStandardMaterial({ color: colorOf(lat.cation), roughness: 0.3, metalness: 0.2 }),
+      anion: new THREE.MeshStandardMaterial({ color: colorOf(lat.anion), roughness: 0.3, metalness: 0.05 }),
+    };
+    const radius = { cation: (lat.cation.radius / sum) * 0.034 * 0.62, anion: (lat.anion.radius / sum) * 0.034 * 0.62 };
+    sites.forEach((site, i) => {
+      const m = new THREE.Mesh(SPHERE, mats[site.role]);
+      m.scale.setScalar(radius[site.role] * (i === center ? 1.15 : 1));
+      m.position.set(site.p[0] * unit, site.p[1] * unit, site.p[2] * unit);
+      group.add(m);
+    });
+    // เส้นแสดงเลขโคออร์ดิเนชันของไอออนตัวอย่าง
+    const pts = [];
+    for (const j of neighbors) {
+      pts.push(new THREE.Vector3(...c0.p.map((v) => v * unit)), new THREE.Vector3(...sites[j].p.map((v) => v * unit)));
+    }
+    const lines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffe066 }));
+    group.add(lines);
+    const lang = getLang();
+    const centerIon = c0.role === 'cation' ? lat.cation : lat.anion;
+    const label = new TextSprite([
+      { text: `${lat.title} · ${lang === 'th' ? lat.th : lat.en}`, size: 42 },
+      { text: t('latticeCN', centerIon.pretty, neighbors.length, lat.cn), size: 28, color: '#ffe082' },
+      { text: t('latticeNote'), size: 26, color: '#d9c4ff' },
+    ]);
+    const top = Math.max(...sites.map((st) => st.p[1])) * unit + 0.03;
+    label.position.set(pos.x, pos.y + top, pos.z);
+    this.root.add(group, label);
+    this.lattice = { group, label, mats, key: lat.title };
+  }
+
+  hideLattice() {
+    if (!this.lattice) return;
+    this.lattice.group.removeFromParent();
+    this.lattice.label.removeFromParent();
+    this.lattice.label.dispose();
+    Object.values(this.lattice.mats).forEach((m) => m.dispose());
+    this.lattice = null;
   }
 
   /** หาอะตอมที่รังสีชนใกล้ที่สุด (พิกัดท้องถิ่น) */

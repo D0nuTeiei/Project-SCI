@@ -9,7 +9,26 @@ export function atomRadius(el) {
 /** ความยาวพันธะที่แสดงผล (เมตร) — พันธะคู่/สามสั้นลงเล็กน้อยเหมือนของจริง */
 export function bondLength(bond) {
   const base = atomRadius(bond.a.el) + atomRadius(bond.b.el) + 0.035;
-  return base * (bond.order === 1 ? 1 : bond.order === 2 ? 0.92 : 0.86);
+  // พันธะเรโซแนนซ์ (เช่น 1.5) ยาวระหว่างพันธะเดี่ยวกับพันธะคู่
+  const o = bond.resonance ?? bond.order;
+  const f = o <= 2 ? 1 - 0.08 * (o - 1) : 0.92 - 0.06 * (o - 2);
+  return base * f;
+}
+
+/**
+ * ดึงอะตอมที่เกิดพันธะไฮโดรเจนเข้าหากันเบา ๆ (ให้เห็นว่าโมเลกุลน้ำเกาะกลุ่มกัน)
+ * hbonds: [{ h, acceptor }]
+ */
+export function attractHydrogenBonds(hbonds, target = 0.115, k = 0.04) {
+  for (const { h, acceptor } of hbonds) {
+    const dx = acceptor.pos.x - h.pos.x; const dy = acceptor.pos.y - h.pos.y; const dz = acceptor.pos.z - h.pos.z;
+    const d = Math.hypot(dx, dy, dz) || 1e-6;
+    const err = ((d - target) / d) * k;
+    const wh = h.kinematic ? 0 : acceptor.kinematic ? 1 : 0.5;
+    const wa = acceptor.kinematic ? 0 : h.kinematic ? 1 : 0.5;
+    move(h, dx * err * wh, dy * err * wh, dz * err * wh);
+    move(acceptor, -dx * err * wa, -dy * err * wa, -dz * err * wa);
+  }
 }
 
 const BREAK_RATIO = 1.8;
@@ -245,7 +264,85 @@ export function relax(sys, iterations = 6) {
       }
     }
 
-    // 3) กันอะตอมซ้อนกัน
+    // 3) พันธะคู่/เรโซแนนซ์หมุนไม่ได้: อะตอมที่ต่อกับสองปลายของพันธะต้องอยู่ในระนาบเดียวกัน
+    //    (เอทีนแบนราบ, วงเบนซีนแบน, ไอโซเมอร์ cis/trans คงรูป)
+    for (const b of sys.bonds) {
+      const o = b.resonance ?? b.order;
+      if (o < 1.5 || o >= 3) continue;
+      const A = b.a; const B = b.b;
+      const xs = A.neighbors.filter((n) => n !== B);
+      const ys = B.neighbors.filter((n) => n !== A);
+      if (!xs.length || !ys.length) continue;
+      const X = xs[0];
+      const ux = B.pos.x - A.pos.x; const uy = B.pos.y - A.pos.y; const uz = B.pos.z - A.pos.z;
+      const vx = X.pos.x - A.pos.x; const vy = X.pos.y - A.pos.y; const vz = X.pos.z - A.pos.z;
+      let nx = uy * vz - uz * vy; let ny = uz * vx - ux * vz; let nz = ux * vy - uy * vx;
+      const nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) continue;
+      nx /= nl; ny /= nl; nz /= nl;
+      for (const Y of [...xs.slice(1), ...ys]) {
+        if (Y.kinematic) continue;
+        const d = (Y.pos.x - A.pos.x) * nx + (Y.pos.y - A.pos.y) * ny + (Y.pos.z - A.pos.z) * nz;
+        move(Y, -nx * d * 0.3, -ny * d * 0.3, -nz * d * 0.3);
+      }
+    }
+
+    // วงอะโรมาติก: ทั้งวงและอะตอมที่ต่อกับวงอยู่ในระนาบเดียว
+    const rings = new Set();
+    for (const a of atoms) if (a.aromaticRing) rings.add(a.aromaticRing);
+    for (const ring of rings) {
+      const c = { x: 0, y: 0, z: 0 };
+      ring.forEach((a) => { c.x += a.pos.x / ring.length; c.y += a.pos.y / ring.length; c.z += a.pos.z / ring.length; });
+      let nx = 0; let ny = 0; let nz = 0;
+      ring.forEach((a, i) => {
+        const b2 = ring[(i + 1) % ring.length];
+        const ux = a.pos.x - c.x; const uy = a.pos.y - c.y; const uz = a.pos.z - c.z;
+        const vx = b2.pos.x - c.x; const vy = b2.pos.y - c.y; const vz = b2.pos.z - c.z;
+        nx += uy * vz - uz * vy; ny += uz * vx - ux * vz; nz += ux * vy - uy * vx;
+      });
+      const nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) continue;
+      nx /= nl; ny /= nl; nz /= nl;
+      // หกเหลี่ยมด้านเท่า: กำหนดระยะ 1-2, 1-3, 1-4 ในวง (L, √3L, 2L) กันวงพับเว้า
+      const ringBonds = ring.map((a, i) => a.bondTo(ring[(i + 1) % ring.length])).filter(Boolean);
+      const L = ringBonds.reduce((sum, b2) => sum + bondLength(b2), 0) / (ringBonds.length || 1);
+      for (let i = 0; i < 6; i++) {
+        for (let j = i + 2; j < 6; j++) {
+          const k = Math.min(j - i, 6 - (j - i));
+          if (k < 2) continue;
+          const want = k === 2 ? Math.sqrt(3) * L : 2 * L;
+          const A = ring[i]; const B = ring[j];
+          const dx = B.pos.x - A.pos.x; const dy = B.pos.y - A.pos.y; const dz = B.pos.z - A.pos.z;
+          const dist = Math.hypot(dx, dy, dz) || 1e-6;
+          const err = ((dist - want) / dist) * 0.2;
+          const wa = A.kinematic ? 0 : B.kinematic ? 1 : 0.5;
+          const wb = B.kinematic ? 0 : A.kinematic ? 1 : 0.5;
+          move(A, dx * err * wa, dy * err * wa, dz * err * wa);
+          move(B, -dx * err * wb, -dy * err * wb, -dz * err * wb);
+        }
+      }
+      // อะตอมที่ต่อกับวงชี้ออกนอกวงตามแนวรัศมี
+      for (const a of ring) {
+        const rx = a.pos.x - c.x; const ry = a.pos.y - c.y; const rz = a.pos.z - c.z;
+        const rl = Math.hypot(rx, ry, rz) || 1e-6;
+        for (const b2 of a.bonds) {
+          const n = b2.other(a);
+          if (ring.includes(n) || n.kinematic) continue;
+          const len = bondLength(b2);
+          const tx = a.pos.x + (rx / rl) * len; const ty = a.pos.y + (ry / rl) * len; const tz = a.pos.z + (rz / rl) * len;
+          move(n, (tx - n.pos.x) * 0.3, (ty - n.pos.y) * 0.3, (tz - n.pos.z) * 0.3);
+        }
+      }
+      const flat = new Set(ring);
+      ring.forEach((a) => a.neighbors.forEach((n) => flat.add(n)));
+      for (const p of flat) {
+        if (p.kinematic) continue;
+        const d = (p.pos.x - c.x) * nx + (p.pos.y - c.y) * ny + (p.pos.z - c.z) * nz;
+        move(p, -nx * d * 0.5, -ny * d * 0.5, -nz * d * 0.5);
+      }
+    }
+
+    // 4) กันอะตอมซ้อนกัน
     for (let i = 0; i < atoms.length; i++) {
       const a = atoms[i];
       for (let j = i + 1; j < atoms.length; j++) {

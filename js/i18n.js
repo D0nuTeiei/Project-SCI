@@ -49,7 +49,10 @@ const STRINGS = {
     polar: 'มีขั้ว',
     nonpolar: 'ไม่มีขั้ว',
     bondType: 'ชนิดพันธะ',
-    ionic: 'ไอออนิก (ΔEN ≥ 1.7)',
+    ionic: 'ไอออนิก (โลหะ + อโลหะ)',
+    formulaMass: 'มวลสูตร',
+    oneLewis: '(หนึ่งในโครงสร้างเรโซแนนซ์)',
+    crystalForceRow: 'แรงยึดเหนี่ยว',
     covalent: 'โคเวเลนต์',
     status: 'สถานะ',
     missingAt: (sym, n) => `${sym} ต้องการอีก ${n} พันธะ`,
@@ -76,13 +79,35 @@ const STRINGS = {
     netCharge: 'ประจุสุทธิ',
     ions: 'ไอออน',
     formalCharges: 'ประจุฟอร์มอล',
-    hint: 'คำใบ้',
+    hintRow: 'คำใบ้',
     hintCharge: (q) => `ถ้า${q > 0 ? 'ดึงอิเล็กตรอนออก' : 'เติมอิเล็กตรอน'} ${Math.abs(q)} ตัว (ประจุ ${q > 0 ? '+' : '−'}${Math.abs(q)}) จะครบ — กดปุ่ม "ประจุ ${q > 0 ? '+' : '−'}"`,
     lostElectron: (f) => `ดึงอิเล็กตรอนออก 1 ตัว → ${f}`,
     gainedElectron: (f) => `เติมอิเล็กตรอน 1 ตัว → ${f}`,
     chargeLimit: 'ประจุถึงขีดจำกัดแล้ว (±3)',
     selectAtomFirst: 'แตะเลือกอะตอมก่อน แล้วค่อยกดปุ่มประจุ',
     saltFormed: (n) => `🧂 ไอออนรวมกันเป็น ${n}`,
+    breakCost: (e) => `ต้องใช้พลังงาน ${e} kJ/mol เพื่อสลายพันธะ`,
+    bondFormedE: (pair, e) => `⚡ เกิดพันธะ ${pair} · ปล่อยพลังงาน ${e} kJ/mol`,
+    bondBrokenE: (e) => `🔥 สลายพันธะ · ต้องใช้พลังงาน ${e} kJ/mol (ดูดพลังงาน)`,
+    energyRow: 'พลังงานพันธะรวม',
+    energyNote: (e) => `${e} kJ/mol (ต้องใช้เท่านี้เพื่อแยกเป็นอะตอมทั้งหมด)`,
+    formulaUnit: 'หน่วยสูตร (ผลึกไอออนิก)',
+    ionicNoteRow: 'โครงสร้างจริง',
+    ionicNote: 'ผลึกไอออนิก — ไม่ได้อยู่เป็นโมเลกุล สูตรนี้คืออัตราส่วนไอออนในผลึก (หน่วยสูตร) ไอออนแต่ละตัวถูกไอออนประจุตรงข้ามล้อมรอบหลายตัว',
+    lattice: 'โครงผลึก',
+    showLattice: '🔷 ดูโครงผลึก',
+    hideLattice: 'ซ่อนโครงผลึก',
+    noLattice: 'ยังไม่มีแบบจำลองโครงผลึกของสารนี้ (เลือกสารไอออนิก เช่น NaCl, MgO, CaF₂, Na₂O, CsCl, NH₄Cl)',
+    latticeCN: (ion, n, cn) => `${ion} แต่ละตัวล้อมด้วยไอออนประจุตรงข้าม ${n} ตัว (เลขโคออร์ดิเนชัน ${cn})`,
+    latticeNote: 'ไม่มีคู่ "โมเลกุล" — ทุกไอออนดึงดูดกันทั้งผลึก',
+    resonanceRow: 'เรโซแนนซ์',
+    resonanceNote: (pair, n, order) => `พันธะ ${pair} ${n} พันธะยาวเท่ากัน (อันดับพันธะเฉลี่ย ${order}) — โมเลกุลไม่ได้สลับไปมาระหว่างโครงสร้าง`,
+    imfRow: 'แรงระหว่างโมเลกุล',
+    imf: { london: 'แรงลอนดอน', dipole: 'แรงดึงดูดระหว่างขั้ว (ไดโพล–ไดโพล)', hbond: 'พันธะไฮโดรเจน', ionic: 'แรงดึงดูดไฟฟ้าระหว่างไอออน' },
+    bpRow: 'จุดเดือด',
+    boilNote: 'เมื่อเดือด พันธะไฮโดรเจน/แรงระหว่างโมเลกุลถูกทำลาย — พันธะโคเวเลนต์ภายในโมเลกุลไม่ขาด',
+    hbondsInScene: (n) => `พันธะไฮโดรเจนในฉาก ${n} พันธะ (เส้นจุดสีเหลือง)`,
+    duplicate: '📋 เพิ่มอีก 1 โมเลกุล',
     detachHint: 'กดค้าง (หรือ Shift+ลาก) ที่อะตอมเพื่อดึงออกจากโมเลกุล • แตะสองครั้งเพื่อแยกอะตอม',
     helpBody: `
       <h3>สร้างโมเลกุล</h3>
@@ -105,6 +130,14 @@ const STRINGS = {
         <li>สร้างไอออนหลายอะตอมได้ เช่น SO₄ แล้วกดประจุ − สองครั้ง ได้ SO₄²⁻ (ระบบจัดประจุฟอร์มอลบนอะตอมให้เอง แสดงเป็นป้ายวงกลม +/− บนอะตอม)</li>
         <li>วางไอออนบวกและไอออนลบไว้ใกล้กัน (เส้นประสีม่วง) ระบบจะบอกชื่อเกลือ เช่น NH₄⁺ + Cl⁻ → NH₄Cl</li>
         <li>โมเลกุลเช่น O₃, CO, HNO₃ ได้ประจุฟอร์มอลอัตโนมัติ ส่วน NO, NO₂ เป็นอนุมูลอิสระ</li>
+      </ul>
+      <h3>สิ่งที่แอปช่วยแก้ความเข้าใจผิด (จากงานวิจัย)</h3>
+      <ul>
+        <li><b>สารไอออนิกไม่ใช่โมเลกุล</b>: พันธะไอออนิกวาดเป็นเส้นประสีม่วง (แรงดึงดูดไฟฟ้า) กด "ดูโครงผลึก" เพื่อดูว่าไอออนแต่ละตัวถูกล้อมด้วยไอออนตรงข้ามหลายตัว</li>
+        <li><b>พันธะไฮโดรเจน</b>: วางโมเลกุลน้ำหลายโมเลกุลใกล้กัน จะเห็นเส้นจุดสีเหลืองระหว่างโมเลกุล — การเดือดทำลายพันธะนี้ ไม่ได้ทำลายพันธะ O–H</li>
+        <li><b>สภาพขั้ว</b>: ขึ้นกับรูปร่างและคู่อิเล็กตรอนโดดเดี่ยว เช่น O₃ เป็นธาตุเดียวกันแต่มีขั้ว</li>
+        <li><b>เรโซแนนซ์</b>: พันธะที่มีเส้นทึบ + เส้นประ ยาวเท่ากันทุกพันธะ ประจุกระจายเป็นเศษส่วน (เช่น ⅔−)</li>
+        <li><b>พลังงานพันธะ</b>: การเกิดพันธะปล่อยพลังงาน การสลายพันธะต้องใช้พลังงาน (ดูตัวเลขตอนดึงพันธะจนเป็นสีส้ม)</li>
       </ul>
       <h3>โหมดการแสดงผล</h3>
       <ul>
@@ -162,7 +195,10 @@ const STRINGS = {
     polar: 'Polar',
     nonpolar: 'Nonpolar',
     bondType: 'Bond type',
-    ionic: 'Ionic (ΔEN ≥ 1.7)',
+    ionic: 'Ionic (metal + nonmetal)',
+    formulaMass: 'Formula mass',
+    oneLewis: '(one resonance structure)',
+    crystalForceRow: 'Attractive forces',
     covalent: 'Covalent',
     status: 'Status',
     missingAt: (sym, n) => `${sym} needs ${n} more bond${n > 1 ? 's' : ''}`,
@@ -188,13 +224,35 @@ const STRINGS = {
     netCharge: 'Net charge',
     ions: 'Ions',
     formalCharges: 'Formal charges',
-    hint: 'Hint',
+    hintRow: 'Hint',
     hintCharge: (q) => `${q > 0 ? 'Remove' : 'Add'} ${Math.abs(q)} electron${Math.abs(q) > 1 ? 's' : ''} (charge ${q > 0 ? '+' : '−'}${Math.abs(q)}) to complete it — press "Charge ${q > 0 ? '+' : '−'}"`,
     lostElectron: (f) => `Removed one electron → ${f}`,
     gainedElectron: (f) => `Added one electron → ${f}`,
     chargeLimit: 'Charge limit reached (±3)',
     selectAtomFirst: 'Tap an atom first, then press a charge button',
     saltFormed: (n) => `🧂 The ions form ${n}`,
+    breakCost: (e) => `Breaking this bond needs ${e} kJ/mol`,
+    bondFormedE: (pair, e) => `⚡ ${pair} bond formed · ${e} kJ/mol released`,
+    bondBrokenE: (e) => `🔥 Bond broken · ${e} kJ/mol absorbed`,
+    energyRow: 'Total bond energy',
+    energyNote: (e) => `${e} kJ/mol (needed to separate all the atoms)`,
+    formulaUnit: 'Formula unit (ionic crystal)',
+    ionicNoteRow: 'Real structure',
+    ionicNote: 'An ionic crystal, not molecules. The formula gives the ion ratio (formula unit); every ion is surrounded by several oppositely charged ions.',
+    lattice: 'Lattice',
+    showLattice: '🔷 Show crystal lattice',
+    hideLattice: 'Hide lattice',
+    noLattice: 'No lattice model for this substance yet (try an ionic compound such as NaCl, MgO, CaF₂, Na₂O, CsCl, NH₄Cl)',
+    latticeCN: (ion, n, cn) => `each ${ion} is surrounded by ${n} oppositely charged ions (coordination ${cn})`,
+    latticeNote: 'No "molecules": every ion attracts its neighbours throughout the crystal',
+    resonanceRow: 'Resonance',
+    resonanceNote: (pair, n, order) => `${n} ${pair} bonds are identical (average bond order ${order}); the molecule does not flip between structures`,
+    imfRow: 'Intermolecular forces',
+    imf: { london: 'London dispersion', dipole: 'dipole–dipole', hbond: 'hydrogen bonding', ionic: 'electrostatic attraction between ions' },
+    bpRow: 'Boiling point',
+    boilNote: 'Boiling breaks hydrogen bonds / intermolecular forces, not the covalent bonds inside the molecule',
+    hbondsInScene: (n) => `${n} hydrogen bond${n > 1 ? 's' : ''} in the scene (yellow dotted lines)`,
+    duplicate: '📋 Add another molecule',
     detachHint: 'Long-press (or Shift+drag) an atom to pull it out • double-tap to detach it',
     helpBody: `
       <h3>Build molecules</h3>
@@ -217,6 +275,14 @@ const STRINGS = {
         <li>Polyatomic ions work too: build SO₄ and press Charge − twice for SO₄²⁻ (formal charges are placed automatically and shown as +/− badges)</li>
         <li>Place positive and negative ions close together (purple dashed line) and the salt is named, e.g. NH₄⁺ + Cl⁻ → NH₄Cl</li>
         <li>Molecules such as O₃, CO and HNO₃ get formal charges automatically; NO and NO₂ are radicals</li>
+      </ul>
+      <h3>Research-based misconception fixes</h3>
+      <ul>
+        <li><b>Ionic compounds are not molecules</b>: ionic bonds are drawn as purple dashes (electrostatic attraction); press "Show crystal lattice" to see each ion surrounded by many opposite ions</li>
+        <li><b>Hydrogen bonds</b>: place several water molecules together to see yellow dotted lines between molecules — boiling breaks these, not the O–H bonds</li>
+        <li><b>Polarity</b> depends on shape and lone pairs: O₃ is made of one element yet is polar</li>
+        <li><b>Resonance</b>: bonds drawn solid + dashed are all identical; charges spread as fractions (e.g. ⅔−)</li>
+        <li><b>Bond energy</b>: forming bonds releases energy; breaking bonds needs energy (see the number while stretching a bond orange)</li>
       </ul>
       <h3>Modes</h3>
       <ul>

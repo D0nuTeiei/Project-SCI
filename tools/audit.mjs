@@ -11,19 +11,35 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 import { BY_SYMBOL } from '../js/elements.js';
-import { ChemSystem, analyze, shapeOf, dipoleMagnitude } from '../js/chemistry.js';
+import { ChemSystem, analyze, shapeOf, dipoleMagnitude, findHydrogenBonds } from '../js/chemistry.js';
+import { bondEnergy } from '../js/energy.js';
+import { latticeFor } from '../js/lattice.js';
 import { relax } from '../js/physics.js';
 import { buildSmiles } from './smiles.mjs';
 import { CASES } from './audit-cases.mjs';
 
 const FEATURE = {
-  lattice: 'แสดงโครงผลึกไอออนิก (ไม่ใช่โมเลกุล)',
   network: 'แสดงโครงผลึกร่างตาข่าย',
   metallic: 'แสดงพันธะโลหะ',
-  hbond: 'แสดงพันธะไฮโดรเจนระหว่างโมเลกุล',
-  bondEnergy: 'แสดงพลังงานพันธะ',
   stereo: 'แยกไอโซเมอร์เชิงพื้นที่ (cis/trans, ไครัล)',
 };
+
+/** วางโมเลกุลน้ำโมเลกุลที่สองให้ O อยู่ต่อจากแนว O–H ของโมเลกุลแรก แล้วตรวจหาพันธะไฮโดรเจน */
+function waterDimerHBonds() {
+  const sys = new ChemSystem();
+  const w1 = buildSmiles(sys, BY_SYMBOL, 'O').heavy[0];
+  const w2 = buildSmiles(sys, BY_SYMBOL, 'O').heavy[0];
+  for (let f = 0; f < 400; f++) relax(sys);
+  const h = w1.neighbors[0];
+  const ux = h.pos.x - w1.pos.x; const uy = h.pos.y - w1.pos.y; const uz = h.pos.z - w1.pos.z;
+  const l = Math.hypot(ux, uy, uz);
+  const target = { x: h.pos.x + (ux / l) * 0.12, y: h.pos.y + (uy / l) * 0.12, z: h.pos.z + (uz / l) * 0.12 };
+  const shift = { x: target.x - w2.pos.x, y: target.y - w2.pos.y, z: target.z - w2.pos.z };
+  for (const a of sys.componentOf(w2).atoms) { a.pos.x += shift.x; a.pos.y += shift.y; a.pos.z += shift.z; }
+  const compOf = new Map();
+  sys.components().forEach((c, i) => c.atoms.forEach((a) => compOf.set(a, i)));
+  return findHydrogenBonds(sys.atoms, compOf).length;
+}
 
 function angle(c, a, b) {
   const u = [a.pos.x - c.pos.x, a.pos.y - c.pos.y, a.pos.z - c.pos.z];
@@ -41,14 +57,39 @@ function dihedral(p0, p1, p2, p3) {
   const c = dot(n1, n2) / (Math.hypot(...n1) * Math.hypot(...n2));
   return (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
 }
-/** ระยะไกลสุดของอะตอมจากระนาบที่ผ่าน 3 อะตอมแรก (เมตร) */
+/** ระยะไกลสุดของอะตอมจากระนาบที่เข้ากับทุกอะตอมดีที่สุด (least squares, เมตร) */
 function planarity(atoms) {
-  const [a, b, c] = atoms;
-  const u = [b.pos.x - a.pos.x, b.pos.y - a.pos.y, b.pos.z - a.pos.z];
-  const v = [c.pos.x - a.pos.x, c.pos.y - a.pos.y, c.pos.z - a.pos.z];
-  const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-  const l = Math.hypot(...n);
-  return Math.max(...atoms.map((p) => Math.abs((p.pos.x - a.pos.x) * n[0] + (p.pos.y - a.pos.y) * n[1] + (p.pos.z - a.pos.z) * n[2]) / l));
+  const n = atoms.length;
+  const c = atoms.reduce((s, a) => [s[0] + a.pos.x / n, s[1] + a.pos.y / n, s[2] + a.pos.z / n], [0, 0, 0]);
+  const m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const a of atoms) {
+    const d = [a.pos.x - c[0], a.pos.y - c[1], a.pos.z - c[2]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i][j] += d[i] * d[j];
+  }
+  // เวกเตอร์ลักษณะเฉพาะที่ค่าน้อยสุด ด้วยวิธี Jacobi
+  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 50; sweep++) {
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      if (Math.abs(m[p][q]) < 1e-14) continue;
+      const th = 0.5 * Math.atan2(2 * m[p][q], m[q][q] - m[p][p]);
+      const cs = Math.cos(th); const sn = Math.sin(th);
+      for (let k = 0; k < 3; k++) {
+        const mkp = m[k][p]; const mkq = m[k][q];
+        m[k][p] = cs * mkp - sn * mkq; m[k][q] = sn * mkp + cs * mkq;
+      }
+      for (let k = 0; k < 3; k++) {
+        const mpk = m[p][k]; const mqk = m[q][k];
+        m[p][k] = cs * mpk - sn * mqk; m[q][k] = sn * mpk + cs * mqk;
+      }
+      for (let k = 0; k < 3; k++) {
+        const vkp = v[k][p]; const vkq = v[k][q];
+        v[k][p] = cs * vkp - sn * vkq; v[k][q] = sn * vkp + cs * vkq;
+      }
+    }
+  }
+  const idx = [0, 1, 2].reduce((b, i) => (m[i][i] < m[b][b] ? i : b), 0);
+  const nrm = [v[0][idx], v[1][idx], v[2][idx]];
+  return Math.max(...atoms.map((a) => Math.abs((a.pos.x - c[0]) * nrm[0] + (a.pos.y - c[1]) * nrm[1] + (a.pos.z - c[2]) * nrm[2])));
 }
 
 function runCase(cs, seed) {
@@ -61,7 +102,13 @@ function runCase(cs, seed) {
   const nb = center.neighbors;
   const angles = [];
   for (let i = 0; i < nb.length; i++) for (let j = i + 1; j < nb.length; j++) angles.push(angle(center, nb[i], nb[j]));
-  const orders = center.bonds.filter((b) => b.other(center).el.symbol !== 'H').map((b) => b.order);
+  // พันธะเรโซแนนซ์: เทียบเฉพาะพันธะไปยังอะตอมปลายชนิดเดียวกัน (เช่น O ทั้งสามใน CO₃²⁻) หรือพันธะในวง
+  const terminal = center.bonds.filter((b) => b.other(center).bonds.length === 1 && b.other(center).el.symbol !== 'H');
+  const bySym = new Map();
+  terminal.forEach((b) => { const k = b.other(center).el.symbol; bySym.set(k, [...(bySym.get(k) || []), b]); });
+  const group = [...bySym.values()].sort((x, y) => y.length - x.length)[0];
+  const ringBonds = center.bonds.filter((b) => b.other(center).bonds.length > 1);
+  const orders = (group && group.length >= 2 ? group : ringBonds).map((b) => +b.effectiveOrder.toFixed(2));
   let dih = null;
   if (cs.expect.dihedral) {
     const [o1, o2] = heavy;
@@ -109,6 +156,18 @@ for (const cs of CASES) {
   if (e.dihedral) add(`มุมบิด ~${e.dihedral}°`, Math.abs(median(runs.map((x) => x.dih)) - e.dihedral) <= 15, `${median(runs.map((x) => x.dih)).toFixed(0)}°`, `${e.dihedral}°`);
   if (typeof e.ionic === 'boolean') add('ชนิดพันธะ', r.info.ionic === e.ionic, r.info.ionic ? 'ไอออนิก' : 'โคเวเลนต์', e.ionic ? 'ไอออนิก' : 'โคเวเลนต์');
   for (const k of Object.keys(FEATURE)) if (e[k]) add(FEATURE[k], false, 'ยังไม่มี', 'ควรมี');
+  if (e.lattice) {
+    const lat = latticeFor(r.info.ionGroups);
+    add('แสดงโครงผลึกไอออนิก', !!lat, lat ? `${lat.th} (เลขโคออร์ดิเนชัน ${lat.cn})` : 'ไม่มีแบบจำลอง', 'โครงผลึก');
+  }
+  if (e.hbond) {
+    const n = waterDimerHBonds();
+    add('พบพันธะไฮโดรเจนระหว่างน้ำ 2 โมเลกุล', n >= 1, `${n} พันธะ`, 'อย่างน้อย 1');
+  }
+  if (e.bondEnergy) {
+    const got = bondEnergy(r.center.bonds[0]);
+    add('พลังงานพันธะ', got === e.bondEnergy, `${got} kJ/mol`, `${e.bondEnergy} kJ/mol`);
+  }
   results.push({
     group: cs.group, th: cs.th, smiles: cs.smiles, ref: cs.ref, note: cs.note || '',
     label: r.info.entry ? r.info.entry.en : r.info.pretty, formal: r.formal, checks,
