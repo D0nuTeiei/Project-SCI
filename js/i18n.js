@@ -63,6 +63,7 @@ const STRINGS = {
     bonded: 'เกิดพันธะ!',
     broke: 'พันธะขาด',
     recycled: 'ลบแล้ว',
+    embedNote: 'หน้านี้เปิดอยู่ในโหมด 3D (เมาส์/ทัช) — โหมด AR, VR และกล้องต้องเปิดจากเว็บไซต์ของโปรเจกต์ที่โฮสต์ผ่าน HTTPS เช่น GitHub Pages',
     detachHint: 'กดค้าง (หรือ Shift+ลาก) ที่อะตอมเพื่อดึงออกจากโมเลกุล • แตะสองครั้งเพื่อแยกอะตอม',
     helpBody: `
       <h3>สร้างโมเลกุล</h3>
@@ -148,6 +149,7 @@ const STRINGS = {
     bonded: 'Bonded!',
     broke: 'Bond broken',
     recycled: 'Recycled',
+    embedNote: 'This page runs in 3D mode (mouse/touch). AR, VR and camera modes need the project hosted over HTTPS, e.g. on GitHub Pages.',
     detachHint: 'Long-press (or Shift+drag) an atom to pull it out • double-tap to detach it',
     helpBody: `
       <h3>Build molecules</h3>

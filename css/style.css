@@ -1,4 +1,6 @@
+/* แอปเต็มจอโทนมืดแบบเดียว (ฉาก 3D ออกแบบสำหรับพื้นมืด) */
 :root {
+  color-scheme: dark;
   --bg: #0b1220;
   --panel: rgba(14, 20, 34, 0.86);
   --line: rgba(120, 170, 255, 0.28);
@@ -45,7 +47,9 @@ body.camera-on #camera-feed { display: block; }
   position: fixed;
   inset: 0;
   pointer-events: none;
-  padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  padding-block: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 #overlay > * { pointer-events: auto; }
 
@@ -192,6 +196,8 @@ dialog {
 dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog h3 { margin: 16px 0 6px; color: #8fd0ff; }
 dialog li { margin: 4px 0; line-height: 1.5; }
+dialog .note { margin: 16px 0 4px; padding: 10px 12px; border-radius: 12px; background: rgba(62, 166, 255, 0.12); color: #bfe0ff; line-height: 1.5; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ระหว่างอยู่ใน XR (DOM overlay บนมือถือ) */
 body.in-xr .topbar, body.in-xr #toolbar { display: none; }

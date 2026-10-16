@@ -13,9 +13,12 @@ import { TextSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { t, getLang, setLang, onLangChange } from './i18n.js';
 import { prettyFormula } from './molecules.js';
+import { BY_SYMBOL } from './elements.js';
 
 const $ = (id) => document.getElementById(id);
 const WORLD_HOME = new THREE.Vector3(0, 1.0, 0);
+// เวอร์ชันฝัง (เช่น Artifact) ไม่มีสิทธิ์ใช้ WebXR/กล้อง จึงเหลือเฉพาะโหมด 3D
+const EMBED = !!window.CHEMXR_EMBED;
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -189,7 +192,7 @@ function updateChallengeUI() {
 function applyLang() {
   document.documentElement.lang = getLang();
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
-  $('help-body').innerHTML = t('helpBody');
+  $('help-body').innerHTML = t('helpBody') + (EMBED ? `<p class="note">${t('embedNote')}</p>` : '');
   $('btn-lang').textContent = getLang() === 'th' ? 'EN' : 'TH';
   recyclerLabel.setLines([{ text: t('recycler'), size: 30 }, { text: t('recyclerHint'), size: 24, color: '#9fe8b0' }]);
   if (camStream) $('btn-camera').querySelector('span').textContent = t('cameraOff');
@@ -639,6 +642,10 @@ function animate() {
 
 // ---------- เริ่มต้น ----------
 async function checkSupport() {
+  if (EMBED) {
+    for (const id of ['btn-ar', 'btn-vr', 'btn-camera']) $(id).hidden = true;
+    return;
+  }
   for (const mode of ['ar', 'vr']) {
     let ok = false;
     try { ok = !!navigator.xr && await navigator.xr.isSessionSupported('immersive-' + mode); } catch { /* ignore */ }
@@ -646,6 +653,19 @@ async function checkSupport() {
   }
 }
 
+/** เริ่มด้วยโมเลกุลน้ำหนึ่งโมเลกุล ให้เห็นทันทีว่าเครื่องมือทำอะไรได้ */
+function seedExample() {
+  const o = sys.addAtom(BY_SYMBOL.O, new THREE.Vector3(0, 0.03, 0));
+  const h1 = sys.addAtom(BY_SYMBOL.H, new THREE.Vector3(-0.06, -0.01, 0.01));
+  const h2 = sys.addAtom(BY_SYMBOL.H, new THREE.Vector3(0.06, -0.01, 0.01));
+  sys.addBond(o, h1);
+  sys.addBond(o, h2);
+  views.sync();
+  recognized = new Set(views.analyses.filter((e) => e.info.entry).map((e) => e.key + '|' + e.info.entry.id));
+  selection = { kind: 'atom', atom: o };
+}
+
+seedExample();
 applyLang();
 onResize();
 if (window.innerWidth <= 720) $('info-card').classList.add('collapsed');
